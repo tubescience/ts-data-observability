@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CheckCircle, XCircle, ChevronDown, ChevronRight } from "lucide-react"
+import { CheckCircle, XCircle, ChevronDown, ChevronRight, BarChart3 } from "lucide-react"
+import { MonitorHistory } from "@/components/monitor-history"
 
 interface Check {
   configId: number
@@ -42,7 +43,8 @@ export function MonitorsView() {
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [statusFilter, setStatusFilter] = useState<string>("")
-  const [checkTypeFilter, setCheckTypeFilter] = useState<string>("")
+  const [checkTypeFilter, setCheckTypeFilter] = useState<string>("")  
+  const [historyMonitor, setHistoryMonitor] = useState<Monitor | null>(null)
 
   if (isLoading) return <div className="text-muted-foreground">Loading monitors...</div>
   if (error) return <div className="text-destructive">Failed to load monitors</div>
@@ -129,11 +131,20 @@ export function MonitorsView() {
 
             {expanded.has(m.monitorId) && (
               <div className="border-t border-border bg-muted/20 px-4 py-3 space-y-3">
-                <div className="flex flex-wrap gap-4 text-xs">
-                  <div><span className="text-muted-foreground">Owner:</span> {m.owner}</div>
-                  <div><span className="text-muted-foreground">Warehouse:</span> {m.warehouse || "—"}</div>
-                  <div><span className="text-muted-foreground">Schedule:</span> {m.scheduleCron || "—"}</div>
-                  <div><span className="text-muted-foreground">Task:</span> {m.taskName || "—"}</div>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    <div><span className="text-muted-foreground">Owner:</span> {m.owner}</div>
+                    <div><span className="text-muted-foreground">Warehouse:</span> {m.warehouse || "—"}</div>
+                    <div><span className="text-muted-foreground">Schedule:</span> {m.scheduleCron || "—"}</div>
+                    <div><span className="text-muted-foreground">Task:</span> {m.taskName || "—"}</div>
+                  </div>
+                  <button
+                    onClick={() => setHistoryMonitor(m)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    History
+                  </button>
                 </div>
                 {m.description && (
                   <div className="text-xs text-muted-foreground">{m.description}</div>
@@ -188,6 +199,15 @@ export function MonitorsView() {
           </div>
         ))}
       </div>
+
+      {historyMonitor && (
+        <MonitorHistory
+          monitorId={historyMonitor.monitorId}
+          monitorName={historyMonitor.monitorName}
+          targetTable={`${historyMonitor.targetDatabase}.${historyMonitor.targetSchema}.${historyMonitor.targetTable}`}
+          onClose={() => setHistoryMonitor(null)}
+        />
+      )}
     </div>
   )
 }
