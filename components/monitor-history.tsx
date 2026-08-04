@@ -40,6 +40,7 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [selectedCheck, setSelectedCheck] = useState("")
+  const [selectedGroup, setSelectedGroup] = useState("")
 
   const { data, isLoading, error } = useQuery<HistoryResult[]>({
     queryKey: ["monitor-history", monitorId, dateStart, dateEnd],
@@ -49,10 +50,27 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
 
   const allResults = data || []
   const checkTypes = useMemo(() => [...new Set(allResults.map((r) => r.checkType))].sort(), [allResults])
+  const groupValues = useMemo(() => {
+    const vals = new Set<string>()
+    for (const r of allResults) {
+      if (r.groupValue) vals.add(r.groupValue)
+      // Extract short table name from full path for filtering
+      const parts = r.targetTable.split('.')
+      const tableName = parts[parts.length - 1]?.replace(/"/g, '')
+      if (tableName) vals.add(tableName)
+    }
+    return [...vals].sort()
+  }, [allResults])
 
-  const filteredResults = selectedCheck
-    ? allResults.filter((r) => r.checkType === selectedCheck)
-    : allResults
+  const filteredResults = allResults.filter((r) => {
+    if (selectedCheck && r.checkType !== selectedCheck) return false
+    if (selectedGroup) {
+      const parts = r.targetTable.split('.')
+      const tableName = parts[parts.length - 1]?.replace(/"/g, '') || ''
+      if (r.groupValue !== selectedGroup && tableName !== selectedGroup) return false
+    }
+    return true
+  })
 
   // Build chart data: group by date and check type (+ group value for grouped checks)
   const chartData = useMemo(() => {
@@ -140,6 +158,14 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
             >
               <option value="">All Check Types</option>
               {checkTypes.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select
+              value={selectedGroup}
+              onChange={(e) => setSelectedGroup(e.target.value)}
+              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">All Groups / Tables</option>
+              {groupValues.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
             <div className="ml-auto flex gap-3 text-sm">
               <span className="text-green-600 font-medium">{passCount} passed</span>
