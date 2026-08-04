@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { ResolvedIncidentDetail } from "@/components/resolved-incident-detail"
 
 interface ResolvedIncident {
   incidentId: number
@@ -28,6 +29,7 @@ export function ResolvedIncidents() {
   const [severityFilter, setSeverityFilter] = useState("")
   const [checkFilter, setCheckFilter] = useState("")
   const [targetFilter, setTargetFilter] = useState("")
+  const [viewing, setViewing] = useState<ResolvedIncident | null>(null)
 
   const { data, isLoading, error } = useQuery<ResolvedIncident[]>({
     queryKey: ["incidents-resolved", dateStart, dateEnd],
@@ -112,7 +114,7 @@ export function ResolvedIncidents() {
             </thead>
             <tbody className="divide-y divide-border">
               {incidents.map((incident) => (
-                <tr key={incident.incidentId} className="hover:bg-muted/30">
+                <tr key={incident.incidentId} className="hover:bg-muted/30 cursor-pointer" onClick={() => setViewing(incident)}>
                   <td className="px-3 py-2">
                     <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${severityColor(incident.severity)}`}>
                       {incident.severity}
@@ -131,6 +133,13 @@ export function ResolvedIncidents() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {viewing && (
+        <ResolvedIncidentDetail
+          incident={viewing}
+          onClose={() => setViewing(null)}
+        />
       )}
     </div>
   )
