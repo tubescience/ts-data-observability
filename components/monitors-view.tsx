@@ -58,7 +58,10 @@ export function MonitorsView() {
     if (statusFilter === "enabled" && !m.enabled) return false
     if (statusFilter === "disabled" && m.enabled) return false
     if (checkTypeFilter && !m.checks.some((c) => c.checkType === checkTypeFilter)) return false
-    if (nameFilter && !m.monitorName.toLowerCase().includes(nameFilter.toLowerCase()) && !m.targetTable.toLowerCase().includes(nameFilter.toLowerCase())) return false
+    if (nameFilter) {
+      const regex = new RegExp(`\\b${nameFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      if (!regex.test(m.monitorName) && !regex.test(m.targetTable)) return false
+    }
     return true
   })
 
