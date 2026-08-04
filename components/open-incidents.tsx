@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, X } from "lucide-react"
+import { IncidentDetail } from "@/components/incident-detail"
 
 interface Incident {
   incidentId: number
@@ -25,6 +26,7 @@ function getPSTToday(): string {
 
 export function OpenIncidents() {
   const [resolving, setResolving] = useState<Incident | null>(null)
+  const [viewing, setViewing] = useState<Incident | null>(null)
   const [notes, setNotes] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
   const [checkFilter, setCheckFilter] = useState("")
@@ -149,7 +151,7 @@ export function OpenIncidents() {
             </thead>
             <tbody className="divide-y divide-border">
               {incidents.map((incident) => (
-                <tr key={incident.incidentId} className="hover:bg-muted/30">
+                <tr key={incident.incidentId} className="hover:bg-muted/30 cursor-pointer" onClick={() => setViewing(incident)}>
                   <td className="px-3 py-2">
                     <SeverityBadge severity={incident.severity} />
                   </td>
@@ -163,7 +165,7 @@ export function OpenIncidents() {
                   <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(incident.lastSeen)}</td>
                   <td className="px-3 py-2">
                     <button
-                      onClick={() => setResolving(incident)}
+                      onClick={(e) => { e.stopPropagation(); setResolving(incident) }}
                       className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                     >
                       Resolve
@@ -174,6 +176,14 @@ export function OpenIncidents() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {viewing && (
+        <IncidentDetail
+          incident={viewing}
+          onClose={() => setViewing(null)}
+          onResolve={(inc) => { setViewing(null); setResolving(inc) }}
+        />
       )}
 
       {resolving && (
