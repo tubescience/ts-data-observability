@@ -44,6 +44,7 @@ export function MonitorsView() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [checkTypeFilter, setCheckTypeFilter] = useState<string>("")  
+  const [nameFilter, setNameFilter] = useState<string>("")
   const [historyMonitor, setHistoryMonitor] = useState<Monitor | null>(null)
 
   if (isLoading) return <div className="text-muted-foreground">Loading monitors...</div>
@@ -57,6 +58,7 @@ export function MonitorsView() {
     if (statusFilter === "enabled" && !m.enabled) return false
     if (statusFilter === "disabled" && m.enabled) return false
     if (checkTypeFilter && !m.checks.some((c) => c.checkType === checkTypeFilter)) return false
+    if (nameFilter && !m.monitorName.toLowerCase().includes(nameFilter.toLowerCase()) && !m.targetTable.toLowerCase().includes(nameFilter.toLowerCase())) return false
     return true
   })
 
@@ -79,6 +81,13 @@ export function MonitorsView() {
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
+        <input
+          type="text"
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          placeholder="Search monitor name or table..."
+          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-64"
+        />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
