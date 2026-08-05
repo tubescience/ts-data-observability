@@ -33,7 +33,8 @@ export function OpenIncidents() {
   const [targetFilter, setTargetFilter] = useState("")
   const [groupFilter, setGroupFilter] = useState("")
   const today = getPSTToday()
-  const [dateStart, setDateStart] = useState(today)
+  const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+  const [dateStart, setDateStart] = useState(sixtyDaysAgo)
   const [dateEnd, setDateEnd] = useState(today)
   const queryClient = useQueryClient()
 
