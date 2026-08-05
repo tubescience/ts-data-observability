@@ -164,9 +164,9 @@ export function OpenIncidents() {
                   <td className="px-3 py-2">{incident.failureCount}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(incident.firstSeen)}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(incident.lastSeen)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setResolving(incident) }}
+                      onClick={() => setResolving(incident)}
                       className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                     >
                       Resolve
