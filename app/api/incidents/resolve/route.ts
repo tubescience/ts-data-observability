@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "resolutionNotes is required" }, { status: 400 })
     }
 
-    await querySnowflake("USE ROLE MCP_ENGINEER")
+    await querySnowflake("USE ROLE MCP_MONITOR")
     await querySnowflake(`
       UPDATE TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS
       SET STATUS = 'RESOLVED',
