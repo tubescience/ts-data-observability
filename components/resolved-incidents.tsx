@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ResolvedIncidentDetail } from "@/components/resolved-incident-detail"
+import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface ResolvedIncident {
   incidentId: number
@@ -47,31 +48,63 @@ export function ResolvedIncidents() {
     return true
   })
 
+  const columns: TableColumn[] = [
+    {
+      key: "severity",
+      label: "Severity",
+      render: (_, row) => (
+        <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${severityColor(row.severity)}`}>
+          {row.severity}
+        </span>
+      ),
+    },
+    { key: "checkType", label: "Check Type", className: "font-mono text-xs" },
+    {
+      key: "targetTable",
+      label: "Target",
+      className: "max-w-[200px] truncate text-xs",
+      render: (val) => <span title={val}>{val}</span>,
+    },
+    {
+      key: "resolvedAt",
+      label: "Resolved At",
+      className: "text-xs text-muted-foreground",
+      render: (val) => formatPST(val),
+    },
+    {
+      key: "resolutionNotes",
+      label: "Notes",
+      className: "text-xs max-w-[250px] truncate",
+      hideOnMobile: true,
+      render: (val) => val || "—",
+    },
+  ]
+
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-semibold">Resolved Incidents</h2>
+      <h2 className="text-xl sm:text-2xl font-semibold">Resolved Incidents</h2>
 
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
           <span>From</span>
           <input
             type="date"
             value={dateStart}
             onChange={(e) => setDateStart(e.target.value)}
-            className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
           />
           <span>To</span>
           <input
             type="date"
             value={dateEnd}
             onChange={(e) => setDateEnd(e.target.value)}
-            className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
           />
         </div>
         <select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Severities</option>
           {severities.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -79,7 +112,7 @@ export function ResolvedIncidents() {
         <select
           value={checkFilter}
           onChange={(e) => setCheckFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Check Types</option>
           {checkTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -89,50 +122,21 @@ export function ResolvedIncidents() {
           value={targetFilter}
           onChange={(e) => setTargetFilter(e.target.value)}
           placeholder="Filter target..."
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-48"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-48"
         />
       </div>
 
       {isLoading && <div className="text-muted-foreground">Loading...</div>}
       {error && <div className="text-destructive">Failed to load</div>}
 
-      {!isLoading && !error && incidents.length === 0 && (
-        <div className="text-muted-foreground py-8 text-center">No resolved incidents for selected filters</div>
-      )}
-
-      {incidents.length > 0 && (
-        <div className="border border-border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">Severity</th>
-                <th className="text-left px-3 py-2 font-medium">Check Type</th>
-                <th className="text-left px-3 py-2 font-medium">Target</th>
-                <th className="text-left px-3 py-2 font-medium">Resolved At (PST)</th>
-                <th className="text-left px-3 py-2 font-medium">Resolution Notes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {incidents.map((incident) => (
-                <tr key={incident.incidentId} className="hover:bg-muted/30 cursor-pointer" onClick={() => setViewing(incident)}>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${severityColor(incident.severity)}`}>
-                      {incident.severity}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">{incident.checkType}</td>
-                  <td className="px-3 py-2 max-w-[200px] truncate" title={incident.targetTable}>
-                    {incident.targetTable}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(incident.resolvedAt)}</td>
-                  <td className="px-3 py-2 text-xs max-w-[250px] truncate" title={incident.resolutionNotes || ""}>
-                    {incident.resolutionNotes || "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {!isLoading && !error && (
+        <ResponsiveTable
+          columns={columns}
+          data={incidents}
+          keyField="incidentId"
+          onRowClick={(row) => setViewing(row)}
+          emptyMessage="No resolved incidents for selected filters"
+        />
       )}
 
       {viewing && (

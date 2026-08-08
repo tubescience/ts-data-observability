@@ -52,10 +52,10 @@ export function DashboardView() {
   const failingChecks = (data.checkTypeBreakdown ?? []).filter((c) => c.fail > 0).slice(0, 10)
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-semibold">Health Overview</h2>
+    <div className="space-y-4 sm:space-y-6">
+      <h2 className="text-xl sm:text-2xl font-semibold">Health Overview</h2>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         <MetricCard icon={<ShieldCheck className="w-5 h-5" />} label="Health Score" value={`${data.healthScore}%`} valueColor={scoreColor} />
         <MetricCard icon={<CheckCircle className="w-5 h-5 text-green-500" />} label="Passed" value={data.passed.toLocaleString()} />
         <MetricCard icon={<XCircle className="w-5 h-5 text-red-500" />} label="Failed" value={data.failed.toLocaleString()} />
@@ -64,13 +64,21 @@ export function DashboardView() {
         <MetricCard icon={<Clock className="w-5 h-5 text-blue-500" />} label="Resolved Today" value={data.resolvedToday.toLocaleString()} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's Results Pie */}
-        <div className="bg-card border border-border rounded-lg p-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <div className="bg-card border border-border rounded-lg p-3 sm:p-4">
           <h3 className="text-sm font-medium mb-3">Today&apos;s Results</h3>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={180}>
             <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value}`}>
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={65}
+                label={({ name, value }) => `${name}: ${value}`}
+                labelLine={{ strokeWidth: 1 }}
+              >
                 {pieData.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
@@ -80,16 +88,15 @@ export function DashboardView() {
           </ResponsiveContainer>
         </div>
 
-        {/* 7-Day Trend */}
-        <div className="bg-card border border-border rounded-lg p-4">
+        <div className="bg-card border border-border rounded-lg p-3 sm:p-4">
           <h3 className="text-sm font-medium mb-3">7-Day Trend</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data.weekTrend ?? []}>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={data.weekTrend ?? []} margin={{ left: 0, right: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" />
-              <YAxis tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" />
+              <YAxis tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" width={35} />
               <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
               <Line type="monotone" dataKey="passed" stroke="#22c55e" strokeWidth={2} dot={{ r: 2 }} />
               <Line type="monotone" dataKey="failed" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
             </LineChart>
@@ -97,17 +104,16 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* Failing Check Types */}
       {failingChecks.length > 0 && (
-        <div className="bg-card border border-border rounded-lg p-4">
+        <div className="bg-card border border-border rounded-lg p-3 sm:p-4">
           <h3 className="text-sm font-medium mb-3">Failures by Check Type (Today)</h3>
-          <ResponsiveContainer width="100%" height={Math.max(200, failingChecks.length * 30)}>
-            <BarChart data={failingChecks} layout="vertical" margin={{ left: 100 }}>
+          <ResponsiveContainer width="100%" height={Math.max(180, failingChecks.length * 28)}>
+            <BarChart data={failingChecks} layout="vertical" margin={{ left: 80 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis type="number" tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" width={100} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} stroke="var(--muted-foreground)" width={80} />
               <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
               <Bar dataKey="fail" fill="#ef4444" name="Failed" radius={[0, 4, 4, 0]} />
               <Bar dataKey="pass" fill="#22c55e" name="Passed" radius={[0, 4, 4, 0]} />
             </BarChart>
@@ -120,12 +126,12 @@ export function DashboardView() {
 
 function MetricCard({ icon, label, value, valueColor }: { icon: React.ReactNode; label: string; value: string; valueColor?: string }) {
   return (
-    <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
+    <div className="bg-card border border-border rounded-lg p-3 sm:p-4 flex flex-col gap-1.5 sm:gap-2">
       <div className="flex items-center gap-2 text-muted-foreground">
         {icon}
         <span className="text-xs font-medium">{label}</span>
       </div>
-      <div className={`text-2xl font-bold ${valueColor || ""}`}>{value}</div>
+      <div className={`text-xl sm:text-2xl font-bold ${valueColor || ""}`}>{value}</div>
     </div>
   )
 }

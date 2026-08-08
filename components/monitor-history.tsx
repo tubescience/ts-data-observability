@@ -116,45 +116,45 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
   const failCount = filteredResults.filter((r) => r.status === "FAIL" || r.status === "ERROR").length
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-card border border-border rounded-t-xl sm:rounded-lg shadow-xl w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card z-10">
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="font-semibold flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary" />
+              <TrendingUp className="w-4 h-4 text-primary shrink-0" />
               Monitor History
             </h3>
-            <p className="text-sm text-muted-foreground mt-0.5">{monitorName} — {targetTable}</p>
+            <p className="text-sm text-muted-foreground mt-0.5 truncate">{monitorName} — {targetTable}</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-2 -mr-2">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Filters */}
         <div className="p-4 border-b border-border">
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
               <span>From</span>
               <input
                 type="date"
                 value={dateStart}
                 onChange={(e) => setDateStart(e.target.value)}
-                className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
               />
               <span>To</span>
               <input
                 type="date"
                 value={dateEnd}
                 onChange={(e) => setDateEnd(e.target.value)}
-                className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
               />
             </div>
             <select
               value={selectedCheck}
               onChange={(e) => setSelectedCheck(e.target.value)}
-              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="">All Check Types</option>
               {checkTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -162,12 +162,12 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="">All Groups / Tables</option>
               {groupValues.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
-            <div className="ml-auto flex gap-3 text-sm">
+            <div className="sm:ml-auto flex gap-3 text-sm">
               <span className="text-green-600 font-medium">{passCount} passed</span>
               {failCount > 0 && <span className="text-red-600 font-medium">{failCount} failed</span>}
             </div>

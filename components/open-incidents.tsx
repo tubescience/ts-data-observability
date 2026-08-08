@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, X } from "lucide-react"
 import { IncidentDetail } from "@/components/incident-detail"
+import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface Incident {
   incidentId: number
@@ -78,17 +79,74 @@ export function OpenIncidents() {
     return true
   })
 
+  const columns: TableColumn[] = [
+    {
+      key: "severity",
+      label: "Severity",
+      render: (_, row) => <SeverityBadge severity={row.severity} />,
+    },
+    {
+      key: "checkType",
+      label: "Check Type",
+      className: "font-mono text-xs",
+    },
+    {
+      key: "targetTable",
+      label: "Target",
+      className: "max-w-[200px] truncate text-xs",
+      render: (val) => <span title={val}>{val}</span>,
+    },
+    {
+      key: "groupValue",
+      label: "Group",
+      className: "text-muted-foreground text-xs",
+      hideOnMobile: true,
+      render: (val) => val || "—",
+    },
+    {
+      key: "failureCount",
+      label: "Failures",
+      className: "text-xs",
+    },
+    {
+      key: "firstSeen",
+      label: "First Seen",
+      className: "text-xs text-muted-foreground",
+      hideOnMobile: true,
+      render: (val) => formatPST(val),
+    },
+    {
+      key: "lastSeen",
+      label: "Last Seen",
+      className: "text-xs text-muted-foreground",
+      render: (val) => formatPST(val),
+    },
+    {
+      key: "action",
+      label: "Action",
+      render: (_, row) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); setResolving(row) }}
+          className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors min-h-[32px]"
+        >
+          Resolve
+        </button>
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">Open Incidents ({incidents.length})</h2>
+        <h2 className="text-xl sm:text-2xl font-semibold">Open Incidents ({incidents.length})</h2>
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      {/* Responsive filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
         <select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Severities</option>
           {severities.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -96,7 +154,7 @@ export function OpenIncidents() {
         <select
           value={checkFilter}
           onChange={(e) => setCheckFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Check Types</option>
           {checkTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -106,78 +164,40 @@ export function OpenIncidents() {
           value={targetFilter}
           onChange={(e) => setTargetFilter(e.target.value)}
           placeholder="Search target..."
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-40"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-40"
         />
         <input
           type="text"
           value={groupFilter}
           onChange={(e) => setGroupFilter(e.target.value)}
           placeholder="Search group..."
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-36"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-36"
         />
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
           <span>From</span>
           <input
             type="date"
             value={dateStart}
             onChange={(e) => setDateStart(e.target.value)}
-            className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
           />
           <span>To</span>
           <input
             type="date"
             value={dateEnd}
             onChange={(e) => setDateEnd(e.target.value)}
-            className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
           />
         </div>
       </div>
 
-      {incidents.length === 0 ? (
-        <div className="text-muted-foreground py-8 text-center">No open incidents for selected filters</div>
-      ) : (
-        <div className="border border-border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">Severity</th>
-                <th className="text-left px-3 py-2 font-medium">Check Type</th>
-                <th className="text-left px-3 py-2 font-medium">Target</th>
-                <th className="text-left px-3 py-2 font-medium">Group</th>
-                <th className="text-left px-3 py-2 font-medium">Failures</th>
-                <th className="text-left px-3 py-2 font-medium">First Seen</th>
-                <th className="text-left px-3 py-2 font-medium">Last Seen</th>
-                <th className="text-left px-3 py-2 font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {incidents.map((incident) => (
-                <tr key={incident.incidentId} className="hover:bg-muted/30 cursor-pointer" onClick={() => setViewing(incident)}>
-                  <td className="px-3 py-2">
-                    <SeverityBadge severity={incident.severity} />
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">{incident.checkType}</td>
-                  <td className="px-3 py-2 max-w-[200px] truncate" title={incident.targetTable}>
-                    {incident.targetTable}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{incident.groupValue || "—"}</td>
-                  <td className="px-3 py-2">{incident.failureCount}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(incident.firstSeen)}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(incident.lastSeen)}</td>
-                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => setResolving(incident)}
-                      className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                    >
-                      Resolve
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ResponsiveTable
+        columns={columns}
+        data={incidents}
+        keyField="incidentId"
+        onRowClick={(row) => setViewing(row)}
+        emptyMessage="No open incidents for selected filters"
+      />
 
       {viewing && (
         <IncidentDetail
@@ -189,11 +209,11 @@ export function OpenIncidents() {
 
       {resolving && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-2xl">
+          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-2xl sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 className="font-semibold">Resolve Incident</h3>
-              <button onClick={() => { setResolving(null); setNotes("") }} className="text-muted-foreground hover:text-foreground">
-                <X className="w-4 h-4" />
+              <button onClick={() => { setResolving(null); setNotes("") }} className="text-muted-foreground hover:text-foreground p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4 space-y-4">
@@ -207,22 +227,22 @@ export function OpenIncidents() {
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full border border-input rounded-md p-2 text-sm bg-background min-h-[100px] focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full border border-input rounded-md p-3 text-sm bg-background min-h-[100px] focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Describe the resolution or action taken..."
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-2 p-4 border-t border-border">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 p-4 border-t border-border">
               <button
                 onClick={() => { setResolving(null); setNotes("") }}
-                className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
+                className="px-4 py-2.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => resolveMutation.mutate({ incidentId: resolving.incidentId, resolutionNotes: notes })}
                 disabled={!notes.trim() || resolveMutation.isPending}
-                className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
                 {resolveMutation.isPending ? "Saving..." : "Save Resolved"}
               </button>

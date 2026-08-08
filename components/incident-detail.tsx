@@ -84,18 +84,18 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-card border border-border rounded-t-xl sm:rounded-lg shadow-xl w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card z-10">
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="font-semibold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-orange-500" />
+              <AlertTriangle className="w-4 h-4 text-orange-500 shrink-0" />
               Incident Detail
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{incident.incidentKey}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{incident.incidentKey}</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-2 -mr-2">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -237,16 +237,16 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
         </div>
 
         {/* Actions */}
-        <div className="flex justify-end gap-2 p-4 border-t border-border sticky bottom-0 bg-card">
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 p-4 border-t border-border sticky bottom-0 bg-card">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
+            className="px-4 py-2.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
           >
             Close
           </button>
           <button
             onClick={() => onResolve(incident)}
-            className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+            className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
           >
             Resolve Incident
           </button>

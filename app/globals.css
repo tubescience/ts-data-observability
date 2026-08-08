@@ -95,8 +95,34 @@
   body {
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
+    -webkit-overflow-scrolling: touch;
   }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+}
+
+/* Slide-in animation for mobile nav */
+@keyframes slide-in-from-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-in.slide-in-from-left {
+  animation: slide-in-from-left 0.2s ease-out;
+}
+
+/* Safe area insets for notched phones */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+}
+
+/* Responsive table: hide on mobile, card layout */
+@media (max-width: 767px) {
+  .responsive-table-desktop { display: none; }
+  .responsive-table-mobile { display: block; }
+}
+@media (min-width: 768px) {
+  .responsive-table-desktop { display: block; }
+  .responsive-table-mobile { display: none; }
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface Check {
   resultId: number
@@ -44,15 +45,49 @@ export function SystemChecks() {
     return true
   })
 
+  const columns: TableColumn[] = [
+    {
+      key: "status",
+      label: "Status",
+      render: (_, row) => <StatusBadge status={row.status} />,
+    },
+    { key: "checkType", label: "Check Type", className: "font-mono text-xs" },
+    {
+      key: "targetTable",
+      label: "Target",
+      className: "max-w-[200px] truncate text-xs",
+      render: (val) => <span title={val}>{val}</span>,
+    },
+    {
+      key: "metricValue",
+      label: "Value",
+      className: "text-xs",
+      render: (val) => val != null ? val.toFixed(2) : "—",
+    },
+    {
+      key: "threshold",
+      label: "Threshold",
+      className: "text-xs",
+      hideOnMobile: true,
+      render: (val) => val != null ? val.toFixed(2) : "—",
+    },
+    {
+      key: "checkTimestamp",
+      label: "Time (PST)",
+      className: "text-xs text-muted-foreground",
+      render: (val) => formatPST(val),
+    },
+  ]
+
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-semibold">System Checks (Last 24h)</h2>
+      <h2 className="text-xl sm:text-2xl font-semibold">System Checks (Last 24h)</h2>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Statuses</option>
           {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -60,7 +95,7 @@ export function SystemChecks() {
         <select
           value={checkTypeFilter}
           onChange={(e) => setCheckTypeFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Check Types</option>
           {checkTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -70,56 +105,32 @@ export function SystemChecks() {
           value={targetFilter}
           onChange={(e) => setTargetFilter(e.target.value)}
           placeholder="Filter target..."
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-48"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-48"
         />
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
           <span>From</span>
           <input
             type="date"
             value={dateStart}
             onChange={(e) => setDateStart(e.target.value)}
-            className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
           />
           <span>To</span>
           <input
             type="date"
             value={dateEnd}
             onChange={(e) => setDateEnd(e.target.value)}
-            className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
           />
         </div>
       </div>
 
-      <div className="border border-border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
-              <th className="text-left px-3 py-2 font-medium">Check Type</th>
-              <th className="text-left px-3 py-2 font-medium">Target</th>
-              <th className="text-left px-3 py-2 font-medium">Value</th>
-              <th className="text-left px-3 py-2 font-medium">Threshold</th>
-              <th className="text-left px-3 py-2 font-medium">Time (PST)</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {checks.map((c) => (
-              <tr key={c.resultId} className="hover:bg-muted/30">
-                <td className="px-3 py-2">
-                  <StatusBadge status={c.status} />
-                </td>
-                <td className="px-3 py-2 font-mono text-xs">{c.checkType}</td>
-                <td className="px-3 py-2 max-w-[200px] truncate text-xs" title={c.targetTable}>
-                  {c.targetTable}
-                </td>
-                <td className="px-3 py-2 text-xs">{c.metricValue != null ? c.metricValue.toFixed(2) : "—"}</td>
-                <td className="px-3 py-2 text-xs">{c.threshold != null ? c.threshold.toFixed(2) : "—"}</td>
-                <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(c.checkTimestamp)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ResponsiveTable
+        columns={columns}
+        data={checks}
+        keyField="resultId"
+        emptyMessage="No checks for selected filters"
+      />
     </div>
   )
 }

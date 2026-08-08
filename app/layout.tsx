@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import type React from "react"
 import { AppHeader } from "@/components/app-header"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -10,6 +10,12 @@ export const metadata: Metadata = {
   title: APP_TITLE,
   description: "Data observability dashboard for monitoring pipeline health, incidents, and system checks",
   icons: { icon: LOGO_SRC },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 }
 
 export default function RootLayout({

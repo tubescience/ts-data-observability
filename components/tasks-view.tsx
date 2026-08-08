@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Clock, CheckCircle, XCircle } from "lucide-react"
+import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface TaskResult {
   checkType: string
@@ -63,27 +64,78 @@ export function TasksView() {
   const scheduledTasks = scheduledData || []
   const enabledTasks = scheduledTasks.filter((t) => t.enabled).length
 
+  const scheduledColumns: TableColumn[] = [
+    {
+      key: "enabled",
+      label: "Status",
+      render: (val) => val ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />,
+    },
+    { key: "monitorName", label: "Monitor", className: "font-medium text-xs" },
+    { key: "taskName", label: "Task", className: "font-mono text-xs", hideOnMobile: true },
+    {
+      key: "scheduleCron",
+      label: "Schedule",
+      className: "text-xs",
+      render: (val) => (
+        <span className="inline-flex items-center gap-1">
+          <Clock className="w-3 h-3 text-muted-foreground" />
+          {val}
+        </span>
+      ),
+    },
+    { key: "warehouse", label: "Warehouse", className: "text-xs text-muted-foreground", hideOnMobile: true },
+    {
+      key: "targetTable",
+      label: "Target",
+      className: "text-xs max-w-[200px] truncate",
+      render: (val) => <span title={val}>{val}</span>,
+    },
+  ]
+
+  const resultsColumns: TableColumn[] = [
+    {
+      key: "status",
+      label: "Status",
+      render: (_, row) => (
+        <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${statusColor(row.status)}`}>
+          {row.status}
+        </span>
+      ),
+    },
+    { key: "checkType", label: "Type", className: "font-mono text-xs" },
+    {
+      key: "targetTable",
+      label: "Target",
+      className: "text-xs max-w-[250px] truncate",
+      render: (val) => <span title={val}>{val}</span>,
+    },
+    { key: "groupValue", label: "Group", className: "text-xs text-muted-foreground", hideOnMobile: true, render: (val) => val || "—" },
+    {
+      key: "checkTimestamp",
+      label: "Time (PST)",
+      className: "text-xs text-muted-foreground",
+      render: (val) => formatPST(val),
+    },
+  ]
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <h2 className="text-2xl font-semibold">Tasks & Pipelines</h2>
-      </div>
+      <h2 className="text-xl sm:text-2xl font-semibold">Tasks & Pipelines</h2>
 
-      {/* Sub-tabs */}
-      <div className="flex gap-2 border-b border-border pb-2">
+      <div className="flex gap-2 border-b border-border pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab("scheduled")}
-          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
             activeTab === "scheduled"
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground hover:bg-accent"
           }`}
         >
-          Scheduled Tasks ({scheduledTasks.length})
+          Scheduled ({scheduledTasks.length})
         </button>
         <button
           onClick={() => setActiveTab("results")}
-          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
             activeTab === "results"
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -101,47 +153,10 @@ export function TasksView() {
               <span className="text-muted-foreground">{scheduledTasks.length - enabledTasks} disabled</span>
             )}
           </div>
-
           {scheduledLoading ? (
             <div className="text-muted-foreground">Loading scheduled tasks...</div>
           ) : (
-            <div className="border border-border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium">Status</th>
-                    <th className="text-left px-3 py-2 font-medium">Monitor</th>
-                    <th className="text-left px-3 py-2 font-medium">Task Name</th>
-                    <th className="text-left px-3 py-2 font-medium">Schedule (Cron)</th>
-                    <th className="text-left px-3 py-2 font-medium">Warehouse</th>
-                    <th className="text-left px-3 py-2 font-medium">Target</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {scheduledTasks.map((t) => (
-                    <tr key={t.monitorId} className="hover:bg-muted/30">
-                      <td className="px-3 py-2">
-                        {t.enabled ? (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-red-500" />
-                        )}
-                      </td>
-                      <td className="px-3 py-2 font-medium text-xs">{t.monitorName}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{t.taskName}</td>
-                      <td className="px-3 py-2 text-xs">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-muted-foreground" />
-                          {t.scheduleCron}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">{t.warehouse}</td>
-                      <td className="px-3 py-2 text-xs max-w-[200px] truncate" title={t.targetTable}>{t.targetTable}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResponsiveTable columns={scheduledColumns} data={scheduledTasks} keyField="monitorId" />
           )}
         </div>
       )}
@@ -153,11 +168,11 @@ export function TasksView() {
             {failCount > 0 && <span className="text-red-600 font-medium">{failCount} failing</span>}
           </div>
 
-          <div className="flex flex-wrap gap-3 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="">All Statuses</option>
               {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -165,7 +180,7 @@ export function TasksView() {
             <select
               value={checkFilter}
               onChange={(e) => setCheckFilter(e.target.value)}
-              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="">All Types</option>
               {checkTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -175,22 +190,22 @@ export function TasksView() {
               value={targetFilter}
               onChange={(e) => setTargetFilter(e.target.value)}
               placeholder="Filter target..."
-              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-48"
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-48"
             />
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
               <span>From</span>
               <input
                 type="date"
                 value={dateStart}
                 onChange={(e) => setDateStart(e.target.value)}
-                className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
               />
               <span>To</span>
               <input
                 type="date"
                 value={dateEnd}
                 onChange={(e) => setDateEnd(e.target.value)}
-                className="border border-input rounded-md px-2 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                className="border border-input rounded-md px-2 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring flex-1 md:flex-none"
               />
             </div>
           </div>
@@ -198,37 +213,8 @@ export function TasksView() {
           {isLoading && <div className="text-muted-foreground">Loading...</div>}
           {error && <div className="text-destructive">Failed to load</div>}
 
-          {!isLoading && !error && results.length === 0 ? (
-            <div className="text-muted-foreground py-8 text-center">No results for selected filters</div>
-          ) : (
-            <div className="border border-border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium">Status</th>
-                    <th className="text-left px-3 py-2 font-medium">Type</th>
-                    <th className="text-left px-3 py-2 font-medium">Target</th>
-                    <th className="text-left px-3 py-2 font-medium">Group</th>
-                    <th className="text-left px-3 py-2 font-medium">Time (PST)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {results.map((r, i) => (
-                    <tr key={i} className="hover:bg-muted/30">
-                      <td className="px-3 py-2">
-                        <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${statusColor(r.status)}`}>
-                          {r.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs">{r.checkType}</td>
-                      <td className="px-3 py-2 text-xs max-w-[250px] truncate" title={r.targetTable}>{r.targetTable}</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">{r.groupValue || "—"}</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">{formatPST(r.checkTimestamp)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {!isLoading && !error && (
+            <ResponsiveTable columns={resultsColumns} data={results} emptyMessage="No results for selected filters" />
           )}
         </div>
       )}

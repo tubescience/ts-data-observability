@@ -51,7 +51,6 @@ export function MonitorsView() {
   if (error) return <div className="text-destructive">Failed to load monitors</div>
 
   const allMonitors = data || []
-
   const allCheckTypes = [...new Set(allMonitors.flatMap((m) => m.checks.map((c) => c.checkType)))].sort()
 
   const monitors = allMonitors.filter((m) => {
@@ -78,23 +77,23 @@ export function MonitorsView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <h2 className="text-2xl font-semibold">Monitors ({monitors.length})</h2>
+      <div className="flex items-center gap-4 flex-wrap">
+        <h2 className="text-xl sm:text-2xl font-semibold">Monitors ({monitors.length})</h2>
         <span className="text-sm text-muted-foreground">{enabledCount} enabled</span>
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
         <input
           type="text"
           value={nameFilter}
           onChange={(e) => setNameFilter(e.target.value)}
           placeholder="Search monitor name or table..."
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-64"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-64"
         />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Statuses</option>
           <option value="enabled">Enabled</option>
@@ -103,7 +102,7 @@ export function MonitorsView() {
         <select
           value={checkTypeFilter}
           onChange={(e) => setCheckTypeFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
           <option value="">All Check Types</option>
           {allCheckTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -115,7 +114,7 @@ export function MonitorsView() {
           <div key={m.monitorId} className="border border-border rounded-lg overflow-hidden">
             <button
               onClick={() => toggle(m.monitorId)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left"
+              className="w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-muted/30 transition-colors text-left"
             >
               {expanded.has(m.monitorId) ? (
                 <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -128,7 +127,7 @@ export function MonitorsView() {
                 <XCircle className="w-4 h-4 text-red-500 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <div className="font-medium">{m.monitorName}</div>
+                <div className="font-medium text-sm">{m.monitorName}</div>
                 <div className="text-xs text-muted-foreground truncate">
                   {m.targetDatabase}.{m.targetSchema}.{m.targetTable}
                 </div>
@@ -142,9 +141,9 @@ export function MonitorsView() {
             </button>
 
             {expanded.has(m.monitorId) && (
-              <div className="border-t border-border bg-muted/20 px-4 py-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-wrap gap-4 text-xs">
+              <div className="border-t border-border bg-muted/20 px-3 sm:px-4 py-3 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-x-4 gap-y-1 text-xs">
                     <div><span className="text-muted-foreground">Owner:</span> {m.owner}</div>
                     <div><span className="text-muted-foreground">Warehouse:</span> {m.warehouse || "—"}</div>
                     <div><span className="text-muted-foreground">Schedule:</span> {m.scheduleCron || "—"}</div>
@@ -152,7 +151,7 @@ export function MonitorsView() {
                   </div>
                   <button
                     onClick={() => setHistoryMonitor(m)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors w-full sm:w-auto"
                   >
                     <BarChart3 className="w-3.5 h-3.5" />
                     History
@@ -163,48 +162,60 @@ export function MonitorsView() {
                 )}
 
                 {m.checks.length > 0 && (
-                  <div className="border border-border rounded-md overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead className="bg-muted/50">
-                        <tr>
-                          <th className="text-left px-2 py-1.5 font-medium">Enabled</th>
-                          <th className="text-left px-2 py-1.5 font-medium">Check Type</th>
-                          <th className="text-left px-2 py-1.5 font-medium">Severity</th>
-                          <th className="text-left px-2 py-1.5 font-medium">Threshold</th>
-                          <th className="text-left px-2 py-1.5 font-medium">Columns</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {m.checks.map((c) => (
-                          <tr key={c.configId} className="hover:bg-muted/30">
-                            <td className="px-2 py-1.5">
-                              {c.enabled ? (
-                                <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                              ) : (
-                                <XCircle className="w-3.5 h-3.5 text-red-500" />
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5 font-mono">{c.checkType}</td>
-                            <td className="px-2 py-1.5">
-                              <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${severityColor(c.severity)}`}>
-                                {c.severity}
-                              </span>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              {c.thresholdPct != null && `${c.thresholdPct}%`}
-                              {c.thresholdValue != null && c.thresholdPct == null && c.thresholdValue}
-                              {c.thresholdPct == null && c.thresholdValue == null && "—"}
-                            </td>
-                            <td className="px-2 py-1.5 text-muted-foreground">
-                              {[c.dateColumn, c.keyColumns, c.nullColumns, c.sumColumn, c.groupByColumn]
-                                .filter(Boolean)
-                                .join(", ") || "—"}
-                            </td>
+                  <>
+                    {/* Desktop checks table */}
+                    <div className="responsive-table-desktop border border-border rounded-md overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="text-left px-2 py-1.5 font-medium">Enabled</th>
+                            <th className="text-left px-2 py-1.5 font-medium">Check Type</th>
+                            <th className="text-left px-2 py-1.5 font-medium">Severity</th>
+                            <th className="text-left px-2 py-1.5 font-medium">Threshold</th>
+                            <th className="text-left px-2 py-1.5 font-medium">Columns</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {m.checks.map((c) => (
+                            <tr key={c.configId} className="hover:bg-muted/30">
+                              <td className="px-2 py-1.5">
+                                {c.enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
+                              </td>
+                              <td className="px-2 py-1.5 font-mono">{c.checkType}</td>
+                              <td className="px-2 py-1.5">
+                                <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${severityColor(c.severity)}`}>{c.severity}</span>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                {c.thresholdPct != null && `${c.thresholdPct}%`}
+                                {c.thresholdValue != null && c.thresholdPct == null && c.thresholdValue}
+                                {c.thresholdPct == null && c.thresholdValue == null && "—"}
+                              </td>
+                              <td className="px-2 py-1.5 text-muted-foreground">
+                                {[c.dateColumn, c.keyColumns, c.nullColumns, c.sumColumn, c.groupByColumn].filter(Boolean).join(", ") || "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* Mobile checks cards */}
+                    <div className="responsive-table-mobile space-y-2">
+                      {m.checks.map((c) => (
+                        <div key={c.configId} className="border border-border rounded-md p-2.5 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-medium">{c.checkType}</span>
+                            {c.enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${severityColor(c.severity)}`}>{c.severity}</span>
+                            <span className="text-muted-foreground">
+                              {c.thresholdPct != null ? `${c.thresholdPct}%` : c.thresholdValue != null ? c.thresholdValue : "—"}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             )}

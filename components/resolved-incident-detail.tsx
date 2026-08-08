@@ -82,18 +82,18 @@ export function ResolvedIncidentDetail({ incident, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-card border border-border rounded-t-xl sm:rounded-lg shadow-xl w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-card z-10">
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="font-semibold flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-500" />
+              <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
               Resolved Incident
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{incident.incidentKey}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{incident.incidentKey}</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-2 -mr-2">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -238,7 +238,7 @@ export function ResolvedIncidentDetail({ incident, onClose }: Props) {
         <div className="flex justify-end p-4 border-t border-border sticky bottom-0 bg-card">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
+            className="px-4 py-2.5 text-sm border border-border rounded-md hover:bg-accent transition-colors w-full sm:w-auto"
           >
             Close
           </button>
