@@ -5,7 +5,6 @@ import { DashboardView } from "@/components/dashboard-view"
 import { OpenIncidents } from "@/components/open-incidents"
 import { ResolvedIncidents } from "@/components/resolved-incidents"
 import { MonitorsView } from "@/components/monitors-view"
-import { SystemChecks } from "@/components/system-checks"
 import { TrendsView } from "@/components/trends-view"
 import { SpendView } from "@/components/spend-view"
 import { CreditsView } from "@/components/credits-view"
@@ -19,7 +18,6 @@ const tabs = [
   { id: "open-incidents", label: "Open Incidents" },
   { id: "resolved", label: "Resolved" },
   { id: "monitors", label: "Monitors" },
-  { id: "checks", label: "System Checks" },
   { id: "trends", label: "Trends" },
   { id: "spend", label: "Spend & Revenue" },
   { id: "credits", label: "Credits" },
@@ -96,7 +94,6 @@ export function AppShell() {
         {activeTab === "open-incidents" && <OpenIncidents />}
         {activeTab === "resolved" && <ResolvedIncidents />}
         {activeTab === "monitors" && <MonitorsView />}
-        {activeTab === "checks" && <SystemChecks />}
         {activeTab === "trends" && <TrendsView />}
         {activeTab === "spend" && <SpendView />}
         {activeTab === "credits" && <CreditsView />}

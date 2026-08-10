@@ -26,6 +26,16 @@ interface ScheduledTask {
   targetTable: string
 }
 
+interface PipeTaskStatus {
+  database: string
+  schema: string
+  name: string
+  objectType: string
+  status: string
+  detail: string
+  severity: string | null
+}
+
 export function TasksView() {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
   const [statusFilter, setStatusFilter] = useState("")
@@ -33,16 +43,23 @@ export function TasksView() {
   const [targetFilter, setTargetFilter] = useState("")
   const [dateStart, setDateStart] = useState(today)
   const [dateEnd, setDateEnd] = useState(today)
-  const [activeTab, setActiveTab] = useState<"results" | "scheduled">("scheduled")
+  const [activeTab, setActiveTab] = useState<"results" | "scheduled" | "status">("scheduled")
+
+  const [typeFilter, setTypeFilter] = useState<"all" | "pipes" | "tasks">("all")
 
   const { data, isLoading, error } = useQuery<TaskResult[]>({
-    queryKey: ["tasks"],
-    queryFn: () => fetch("/api/tasks").then((r) => r.json()),
+    queryKey: ["tasks", dateStart, dateEnd],
+    queryFn: () => fetch(`/api/tasks?dateStart=${dateStart}&dateEnd=${dateEnd}`).then((r) => r.json()),
   })
 
   const { data: scheduledData, isLoading: scheduledLoading } = useQuery<ScheduledTask[]>({
     queryKey: ["tasks-scheduled"],
     queryFn: () => fetch("/api/tasks/scheduled").then((r) => r.json()),
+  })
+
+  const { data: statusData, isLoading: statusLoading } = useQuery<PipeTaskStatus[]>({
+    queryKey: ["tasks-status", typeFilter],
+    queryFn: () => fetch(`/api/tasks/status?type=${typeFilter}`).then((r) => r.json()),
   })
 
   const allResults = data || []
@@ -143,6 +160,16 @@ export function TasksView() {
         >
           Check Results
         </button>
+        <button
+          onClick={() => setActiveTab("status")}
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+            activeTab === "status"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-accent"
+          }`}
+        >
+          Pipes & Tasks Status
+        </button>
       </div>
 
       {activeTab === "scheduled" && (
@@ -218,6 +245,14 @@ export function TasksView() {
           )}
         </div>
       )}
+      {activeTab === "status" && (
+        <PipeTaskStatusSection
+          data={Array.isArray(statusData) ? statusData : []}
+          isLoading={statusLoading}
+          typeFilter={typeFilter}
+          onTypeFilterChange={setTypeFilter}
+        />
+      )}
     </div>
   )
 }
@@ -229,6 +264,107 @@ function statusColor(status: string): string {
     ERROR: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   }
   return colors[status] || "bg-gray-100 text-gray-800"
+}
+
+function pipeStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    PASS: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    VALID: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    started: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    FAIL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    ERROR: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    INVALID: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    suspended: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+  }
+  return colors[status] || "bg-gray-100 text-gray-800"
+}
+
+function PipeTaskStatusSection({
+  data,
+  isLoading,
+  typeFilter,
+  onTypeFilterChange,
+}: {
+  data: PipeTaskStatus[]
+  isLoading: boolean
+  typeFilter: "all" | "pipes" | "tasks"
+  onTypeFilterChange: (v: "all" | "pipes" | "tasks") => void
+}) {
+  const [nameFilter, setNameFilter] = useState("")
+
+  const filtered = data.filter((item) => {
+    if (nameFilter && !item.name.toLowerCase().includes(nameFilter.toLowerCase())) return false
+    return true
+  })
+
+  const runningCount = filtered.filter((r) => r.status === "PASS").length
+  const stoppedCount = filtered.filter((r) => r.status === "FAIL" || r.status === "ERROR").length
+
+  const columns: TableColumn[] = [
+    {
+      key: "status",
+      label: "Status",
+      render: (_, row) => (
+        <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${pipeStatusColor(row.status)}`}>
+          {row.status}
+        </span>
+      ),
+    },
+    {
+      key: "objectType",
+      label: "Type",
+      render: (val) => (
+        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+          val === "PIPE" ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400" : "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400"
+        }`}>
+          {val}
+        </span>
+      ),
+    },
+    { key: "schema", label: "Schema", className: "text-xs text-muted-foreground", hideOnMobile: true },
+    { key: "name", label: "Name", className: "font-mono text-xs" },
+    {
+      key: "detail",
+      label: "Details",
+      className: "text-xs text-muted-foreground",
+      hideOnMobile: true,
+    },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 text-sm">
+        <span className="text-green-600 font-medium">{runningCount} passing</span>
+        {stoppedCount > 0 && <span className="text-red-600 font-medium">{stoppedCount} failing</span>}
+        <span className="text-muted-foreground">{filtered.length} total</span>
+      </div>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <select
+          value={typeFilter}
+          onChange={(e) => onTypeFilterChange(e.target.value as "all" | "pipes" | "tasks")}
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="all">All (Pipes & Tasks)</option>
+          <option value="pipes">Pipes Only</option>
+          <option value="tasks">Tasks Only</option>
+        </select>
+        <input
+          type="text"
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          placeholder="Filter by name..."
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-48"
+        />
+      </div>
+
+      {isLoading ? (
+        <div className="text-muted-foreground">Loading...</div>
+      ) : (
+        <ResponsiveTable columns={columns} data={filtered} emptyMessage="No pipes or tasks found" />
+      )}
+    </div>
+  )
 }
 
 function formatPST(iso: string | null): string {
