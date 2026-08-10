@@ -7,3 +7,4 @@ node_modules
 *.pem
 .DS_Store
 .vercel
+snowflake-key.p8
