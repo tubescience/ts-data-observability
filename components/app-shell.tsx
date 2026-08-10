@@ -10,6 +10,7 @@ import { TrendsView } from "@/components/trends-view"
 import { SpendView } from "@/components/spend-view"
 import { CreditsView } from "@/components/credits-view"
 import { TasksView } from "@/components/tasks-view"
+import { LineageView } from "@/components/lineage-view"
 import { MobileNav } from "@/components/mobile-nav"
 import { RefreshCw, Menu } from "lucide-react"
 
@@ -23,6 +24,7 @@ const tabs = [
   { id: "spend", label: "Spend & Revenue" },
   { id: "credits", label: "Credits" },
   { id: "tasks", label: "Tasks" },
+  { id: "lineage", label: "Lineage" },
 ] as const
 
 type TabId = (typeof tabs)[number]["id"]
@@ -99,6 +101,7 @@ export function AppShell() {
         {activeTab === "spend" && <SpendView />}
         {activeTab === "credits" && <CreditsView />}
         {activeTab === "tasks" && <TasksView />}
+        {activeTab === "lineage" && <LineageView />}
       </main>
     </div>
   )
