@@ -1,6 +1,7 @@
 import { querySnowflake } from "@/lib/snowflake"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 function sanitize(value: string): string {
   return value.replace(/[^A-Z0-9_]/g, "")
