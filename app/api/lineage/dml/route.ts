@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   const dbName = parts.length >= 3 ? sanitize(parts[0]) : null
 
   try {
-    await querySnowflake("USE ROLE MCP_MONITOR")
+    try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
 
     // Upstream: find source tables + execution context
     const upstream = await querySnowflake(

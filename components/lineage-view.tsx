@@ -62,7 +62,12 @@ export function LineageView() {
         // Phase 1: OBJECT_DEPENDENCIES (fast)
         const r = await fetch(`/api/lineage?object=${encodeURIComponent(searchObject)}&depth=${depth}`)
         if (cancelled) return
-        if (!r.ok) { const e = await r.json(); setError(e.error); setLoadingPhase(""); return }
+        if (!r.ok) {
+          const text = await r.text()
+          try { setError(JSON.parse(text).error) } catch { setError(text || `Error ${r.status}`) }
+          setLoadingPhase("")
+          return
+        }
         const result: LineageResult = await r.json()
 
         // Show what we have immediately

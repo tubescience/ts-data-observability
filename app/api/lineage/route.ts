@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const dbFilterRef = dbName ? `AND REFERENCED_DATABASE = '${dbName}'` : ""
 
   try {
-    await querySnowflake("USE ROLE MCP_MONITOR")
+    try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
 
     const upstream = await querySnowflake(`
       WITH RECURSIVE lineage_tree AS (

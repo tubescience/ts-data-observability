@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await querySnowflake("USE ROLE MCP_MONITOR")
+    try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
 
     const rows = await querySnowflake(`
       SELECT DISTINCT database, schema, name FROM (
