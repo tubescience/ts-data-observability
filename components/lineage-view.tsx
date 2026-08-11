@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect } from "react"
-import { ArrowUp, ArrowDown, List, Search, Plus } from "lucide-react"
+import { Search, Plus } from "lucide-react"
 
 interface LineageNode {
   database: string
@@ -37,12 +37,11 @@ export function LineageView() {
   const [objectInput, setObjectInput] = useState("")
   const [searchObject, setSearchObject] = useState("")
   const [depth, setDepth] = useState(1)
-  const [showList, setShowList] = useState(false)
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, ExpandedData>>({})
+  const [expandingNode, setExpandingNode] = useState<string | null>(null)
   const [resolving, setResolving] = useState(false)
   const [resolveMatches, setResolveMatches] = useState<ResolveMatch[] | null>(null)
   const [resolveError, setResolveError] = useState("")
-  const [expandedNodes, setExpandedNodes] = useState<Record<string, ExpandedData>>({})
-  const [expandingNode, setExpandingNode] = useState<string | null>(null)
 
   // Progressive loading state
   const [data, setData] = useState<LineageResult | null>(null)
@@ -75,12 +74,20 @@ export function LineageView() {
           const dmlRes = await fetch(`/api/lineage/dml?object=${encodeURIComponent(searchObject)}`)
           if (cancelled) return
           if (dmlRes.ok) {
-            const dmlResult: LineageResult = await dmlRes.json()
+            const dmlResult = await dmlRes.json()
+            const tasks: any[] = dmlResult.tasks || []
+            const upTasks = tasks.filter((t: any) => t.role === "upstream_task")
+            const downTasks = tasks.filter((t: any) => t.role === "downstream_task")
+
             setData((prev) => {
               if (!prev) return prev
               return {
-                upstream: prev.upstream.length === 0 ? dmlResult.upstream : prev.upstream,
-                downstream: prev.downstream.length === 0 ? dmlResult.downstream : prev.downstream,
+                upstream: prev.upstream.length === 0
+                  ? [...dmlResult.upstream, ...upTasks]
+                  : prev.upstream,
+                downstream: prev.downstream.length === 0
+                  ? [...dmlResult.downstream, ...downTasks]
+                  : prev.downstream,
               }
             })
           }
@@ -164,10 +171,13 @@ export function LineageView() {
         setExpandPhase("dml")
         const dmlRes = await fetch(`/api/lineage/dml?object=${encodeURIComponent(fqn)}`)
         if (dmlRes.ok) {
-          const dmlResult: LineageResult = await dmlRes.json()
+          const dmlResult = await dmlRes.json()
+          const tasks: any[] = dmlResult.tasks || []
+          const upTasks = tasks.filter((t: any) => t.role === "upstream_task")
+          const downTasks = tasks.filter((t: any) => t.role === "downstream_task")
           const merged = {
-            upstream: result.upstream.length === 0 ? dmlResult.upstream : result.upstream,
-            downstream: result.downstream.length === 0 ? dmlResult.downstream : result.downstream,
+            upstream: result.upstream.length === 0 ? [...dmlResult.upstream, ...upTasks] : result.upstream,
+            downstream: result.downstream.length === 0 ? [...dmlResult.downstream, ...downTasks] : result.downstream,
           }
           setExpandedNodes((prev) => ({ ...prev, [fqn]: merged }))
         }
@@ -177,10 +187,6 @@ export function LineageView() {
       setExpandPhase("")
     }
   }, [expandedNodes])
-
-  // Collect all nodes including expanded
-  const allUpstream = data ? collectAll(data.upstream, expandedNodes, "upstream") : []
-  const allDownstream = data ? collectAll(data.downstream, expandedNodes, "downstream") : []
 
   return (
     <div className="space-y-6">
@@ -259,65 +265,17 @@ export function LineageView() {
             onExpand={expandNode}
             status={loadingPhase === "dml" || expandPhase === "dml" ? "partial" : loadingPhase || expandPhase ? "loading" : "complete"}
           />
-
-          {/* Toggle for list view */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowList(!showList)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-            >
-              <List className="w-4 h-4" />
-              {showList ? "Hide" : "Show"} List View
-            </button>
-            <span className="text-xs text-muted-foreground">
-              {allUpstream.length} upstream, {allDownstream.length} downstream
-            </span>
-          </div>
-
-          {showList && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <LineageSection
-                title="Upstream (depends on)"
-                icon={<ArrowUp className="w-4 h-4" />}
-                nodes={allUpstream}
-                color="blue"
-              />
-              <LineageSection
-                title="Downstream (depended by)"
-                icon={<ArrowDown className="w-4 h-4" />}
-                nodes={allDownstream}
-                color="amber"
-              />
-            </div>
-          )}
         </>
       )}
     </div>
   )
 }
 
-function collectAll(
-  baseNodes: LineageNode[],
-  expanded: Record<string, ExpandedData>,
-  direction: "upstream" | "downstream"
-): LineageNode[] {
-  const all = [...baseNodes]
-  const seen = new Set(baseNodes.map((n) => n.fqn))
-  for (const [, data] of Object.entries(expanded)) {
-    for (const node of data[direction]) {
-      if (!seen.has(node.fqn)) {
-        seen.add(node.fqn)
-        all.push(node)
-      }
-    }
-  }
-  return all
-}
-
 function getSchemaColor(schema: string, type?: string): string {
   const t = type?.toUpperCase() || ""
   if (t === "VIEW" || t === "MATERIALIZED VIEW") return "#27ae60"
   if (t === "TABLE") return "#2563eb"
+  if (t === "DYNAMIC TABLE") return "#eab308"
   if (t === "PROCEDURE" || t === "FUNCTION") return "#7c3aed"
   if (t === "PIPE" || t === "STREAM") return "#e67e22"
   if (t === "TASK") return "#db2777"
@@ -341,12 +299,12 @@ function LineageGraph({
   onExpand: (fqn: string) => void
   status: "loading" | "partial" | "complete"
 }) {
-  const nodeH = 58
-  const nodeW = 240
-  const hGap = 120
-  const vGap = 16
+  const nodeH = 48
+  const nodeW = 200
+  const hGap = 100
+  const vGap = 14
 
-  const { upNodes, downNodes } = buildExpandedTree(upstream, downstream, expandedNodes, target)
+  const { upNodes, downNodes, edges: relationEdges } = buildExpandedTree(upstream, downstream, expandedNodes, target)
 
   const upByLevel = groupByLevel(upNodes)
   const downByLevel = groupByLevel(downNodes)
@@ -380,89 +338,73 @@ function LineageGraph({
     return startY + index * (nodeH + vGap)
   }
 
-  // Compute positions for SVG lines
-  type NodePos = { x: number; y: number; fqn: string; side: "up" | "down" | "target" }
-  const positions: NodePos[] = []
-
-  // Target
-  positions.push({ x: targetX, y: centerY - nodeH / 2, fqn: "__TARGET__", side: "target" })
-
-  // Upstream
-  upLevels.forEach((level, colI) => {
-    const colX = colXPositions[colI]
-    const nodes = upByLevel[level]
-    nodes.forEach((node, ni) => {
-      positions.push({ x: colX, y: getNodeY(ni, nodes.length), fqn: node.fqn, side: "up" })
-    })
-  })
-
-  // Downstream
-  downLevels.forEach((level, colI) => {
-    const colIdx = targetColIdx + 1 + colI
-    const colX = colXPositions[colIdx]
-    const nodes = downByLevel[level]
-    nodes.forEach((node, ni) => {
-      positions.push({ x: colX, y: getNodeY(ni, nodes.length), fqn: node.fqn, side: "down" })
-    })
-  })
-
-  // Build edge paths (orthogonal routing)
+  // Build edge paths from actual parent-child relationships
   type EdgePath = { d: string }
   const edgePaths: EdgePath[] = []
 
-  // Upstream edges: each upstream node connects right-side to the next column's left-side
+  // Build a position lookup: fqn → {x, y, side}
+  const nodePositions = new Map<string, { x: number; y: number }>()
+  nodePositions.set(target.toUpperCase(), { x: targetX, y: centerY - nodeH / 2 })
+
   upLevels.forEach((level, colI) => {
     const colX = colXPositions[colI]
     const nodes = upByLevel[level]
-    const nextColIdx = colI + 1
-    const nextX = colXPositions[nextColIdx]
-    const nextNodes = nextColIdx === targetColIdx
-      ? [{ _y: centerY - nodeH / 2 }]
-      : (upByLevel[upLevels[colI + 1]] || []).map((_, ni, arr) => ({ _y: getNodeY(ni, arr.length) }))
-
-    const midX = colX + nodeW + (hGap - 40) / 2
-
-    nodes.forEach((_, ni) => {
-      const y1 = getNodeY(ni, nodes.length) + nodeH / 2
-      const targetNodeY = nextColIdx === targetColIdx
-        ? centerY
-        : getNodeY(Math.min(ni, nextNodes.length - 1), nextNodes.length) + nodeH / 2
-      const y2 = targetNodeY
-
-      edgePaths.push({
-        d: `M ${colX + nodeW} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${nextX} ${y2}`
-      })
+    nodes.forEach((node, ni) => {
+      nodePositions.set(node.fqn.toUpperCase(), { x: colX, y: getNodeY(ni, nodes.length) })
     })
   })
 
-  // Downstream edges
   downLevels.forEach((level, colI) => {
     const colIdx = targetColIdx + 1 + colI
     const colX = colXPositions[colIdx]
     const nodes = downByLevel[level]
-    const prevColIdx = colIdx - 1
-    const prevX = colXPositions[prevColIdx]
-    const prevNodes = prevColIdx === targetColIdx
-      ? [{ _y: centerY - nodeH / 2 }]
-      : (downByLevel[downLevels[colI - 1]] || []).map((_, ni, arr) => ({ _y: getNodeY(ni, arr.length) }))
-
-    const midX = prevX + nodeW + (hGap - 40) / 2
-
-    nodes.forEach((_, ni) => {
-      const y2 = getNodeY(ni, nodes.length) + nodeH / 2
-      const sourceY = prevColIdx === targetColIdx
-        ? centerY
-        : getNodeY(Math.min(ni, prevNodes.length - 1), prevNodes.length) + nodeH / 2
-      const y1 = sourceY
-
-      edgePaths.push({
-        d: `M ${prevX + nodeW} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${colX} ${y2}`
-      })
+    nodes.forEach((node, ni) => {
+      nodePositions.set(node.fqn.toUpperCase(), { x: colX, y: getNodeY(ni, nodes.length) })
     })
   })
 
+  // Draw edges based on actual relationships
+  for (const edge of relationEdges) {
+    const fromPos = nodePositions.get(edge.from.toUpperCase())
+    const toPos = nodePositions.get(edge.to.toUpperCase())
+    if (!fromPos || !toPos) continue
+
+    const x1 = fromPos.x + nodeW
+    const y1 = fromPos.y + nodeH / 2
+    const x2 = toPos.x
+    const y2 = toPos.y + nodeH / 2
+    const midX = x1 + (x2 - x1) / 2
+
+    edgePaths.push({
+      d: `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`
+    })
+  }
+
   const isExpanded = (fqn: string) => fqn in expandedNodes
   const isExpanding = (fqn: string) => expandingNode === fqn
+
+  const [tooltip, setTooltip] = useState<{ node: LineageNode | null; x: number; y: number } | null>(null)
+  const [scale, setScale] = useState(1)
+  const [showLegend, setShowLegend] = useState(false)
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      setScale((s) => Math.min(2, Math.max(0.3, s - e.deltaY * 0.002)))
+    }
+  }, [])
+
+  const handleNodeClick = (node: LineageNode, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const container = (e.currentTarget as HTMLElement).closest(".lineage-graph-container")
+    const containerRect = container?.getBoundingClientRect() || rect
+    setTooltip({
+      node,
+      x: rect.left - containerRect.left + rect.width / 2,
+      y: rect.top - containerRect.top - 8,
+    })
+  }
 
   const targetParts = target.split(".")
   const targetObjName = targetParts[targetParts.length - 1] || target
@@ -470,9 +412,66 @@ function LineageGraph({
   const targetType = ""
 
   return (
-    <div className="rounded-lg overflow-x-auto overflow-y-visible bg-[#f8f9fa] dark:bg-zinc-900/50 border border-border p-6 relative">
+    <div className="rounded-lg overflow-auto bg-[#f8f9fa] dark:bg-zinc-900/50 border border-border p-6 relative" onClick={() => { setTooltip(null); setShowLegend(false) }} onWheel={handleWheel}>
+      {/* Color legend */}
+      <div className="absolute top-3 left-3 z-10">
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowLegend(!showLegend) }}
+          className="w-6 h-6 rounded-full bg-white dark:bg-zinc-700 border border-gray-300 dark:border-zinc-500 text-xs font-bold flex items-center justify-center hover:bg-gray-100 dark:hover:bg-zinc-600 shadow-sm"
+        >?</button>
+        {showLegend && (
+          <div className="absolute top-8 left-0 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-xl p-3 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-2">Node Colors</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#27ae60" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">View</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#2563eb" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">Table</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#eab308" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">Dynamic Table</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#7c3aed" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">Procedure / Function</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#e67e22" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">Pipe / Stream</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#db2777" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">Task</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#6b7280" }} />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400">Other / Unknown</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       {/* Status legend */}
-      <div className="absolute top-3 right-3 z-10">
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+        <div className="flex items-center gap-1 mr-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); setScale((s) => Math.min(2, s + 0.15)) }}
+            className="w-6 h-6 rounded bg-white dark:bg-zinc-700 border border-gray-300 dark:border-zinc-500 text-xs font-bold flex items-center justify-center hover:bg-gray-100 dark:hover:bg-zinc-600"
+          >+</button>
+          <span className="text-[10px] text-gray-500 w-8 text-center">{Math.round(scale * 100)}%</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); setScale((s) => Math.max(0.3, s - 0.15)) }}
+            className="w-6 h-6 rounded bg-white dark:bg-zinc-700 border border-gray-300 dark:border-zinc-500 text-xs font-bold flex items-center justify-center hover:bg-gray-100 dark:hover:bg-zinc-600"
+          >-</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setScale(1) }}
+            className="ml-1 px-1.5 h-6 rounded bg-white dark:bg-zinc-700 border border-gray-300 dark:border-zinc-500 text-[10px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-zinc-600"
+          >Reset</button>
+        </div>
         {status === "partial" && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
@@ -492,7 +491,8 @@ function LineageGraph({
           </span>
         )}
       </div>
-      <div className="relative" style={{ width: containerWidth, height: containerHeight, margin: "0 auto" }}>
+      <div className="relative lineage-graph-container" style={{ width: containerWidth * scale, height: containerHeight * scale, margin: "0 auto", overflow: "visible" }}>
+        <div style={{ transform: `scale(${scale})`, transformOrigin: "top left", width: containerWidth, height: containerHeight, position: "relative" }}>
         {/* SVG for connection lines */}
         <svg
           width={containerWidth}
@@ -514,14 +514,15 @@ function LineageGraph({
 
         {/* Target node */}
         <div
-          className="absolute rounded-lg shadow-md border border-gray-200 dark:border-zinc-700"
-          style={{ left: targetX, top: centerY - nodeH / 2, width: nodeW, height: nodeH, zIndex: 1, borderLeftWidth: 5, borderLeftColor: getSchemaColor(targetSchema, targetType), background: "var(--card, white)" }}
+          className="absolute rounded-lg shadow-md border-2 border-white dark:border-gray-300 cursor-pointer hover:shadow-lg transition-shadow ring-1 ring-gray-300 dark:ring-zinc-500"
+          style={{ left: targetX, top: centerY - nodeH / 2, width: nodeW, height: nodeH, zIndex: 1, background: "var(--card, white)" }}
+          onClick={(e) => handleNodeClick({ database: targetParts[0] || "", schema: targetSchema, name: targetObjName, type: "OBJECT SOURCE", level: 0, fqn: target }, e)}
         >
           <div className="flex flex-col justify-center px-3 h-full min-w-0">
-            <span className="font-bold text-sm text-gray-900 dark:text-gray-100 truncate">
+            <span className="font-bold text-[13px] text-gray-900 dark:text-gray-100 truncate">
               {targetObjName}
             </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
               {targetSchema}
             </span>
           </div>
@@ -538,8 +539,9 @@ function LineageGraph({
             return (
               <div
                 key={`up-${level}-${ni}`}
-                className="absolute rounded-lg shadow-md border border-gray-200 dark:border-zinc-700"
+                className="absolute rounded-lg shadow-md border border-gray-200 dark:border-zinc-700 cursor-pointer hover:shadow-lg transition-shadow"
                 style={{ left: colX, top: y, width: nodeW, height: nodeH, zIndex: 1, borderLeftWidth: 5, borderLeftColor: getSchemaColor(node.schema, node.type), background: "var(--card, white)" }}
+                onClick={(e) => handleNodeClick(node, e)}
               >
                 <div className="flex flex-col justify-center px-3 h-full min-w-0 flex-1">
                   <span className="font-bold text-[13px] text-gray-900 dark:text-gray-100 truncate">
@@ -548,15 +550,10 @@ function LineageGraph({
                   <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
                     {node.schema}
                   </span>
-                  {node.process && (
-                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 truncate" title={node.process}>
-                      {node.process}
-                    </span>
-                  )}
                 </div>
                 {!expanded && (
                   <button
-                    onClick={() => onExpand(node.fqn)}
+                    onClick={(e) => { e.stopPropagation(); onExpand(node.fqn) }}
                     className="absolute -left-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white dark:bg-zinc-700 border border-gray-300 dark:border-zinc-500 shadow flex items-center justify-center hover:bg-gray-50 dark:hover:bg-zinc-600 transition-colors"
                     style={{ zIndex: 2 }}
                   >
@@ -584,8 +581,9 @@ function LineageGraph({
             return (
               <div
                 key={`down-${level}-${ni}`}
-                className="absolute rounded-lg shadow-md border border-gray-200 dark:border-zinc-700"
+                className="absolute rounded-lg shadow-md border border-gray-200 dark:border-zinc-700 cursor-pointer hover:shadow-lg transition-shadow"
                 style={{ left: colX, top: y, width: nodeW, height: nodeH, zIndex: 1, borderLeftWidth: 5, borderLeftColor: getSchemaColor(node.schema, node.type), background: "var(--card, white)" }}
+                onClick={(e) => handleNodeClick(node, e)}
               >
                 <div className="flex flex-col justify-center px-3 h-full min-w-0 flex-1">
                   <span className="font-bold text-[13px] text-gray-900 dark:text-gray-100 truncate">
@@ -594,15 +592,10 @@ function LineageGraph({
                   <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
                     {node.schema}
                   </span>
-                  {node.process && (
-                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 truncate" title={node.process}>
-                      {node.process}
-                    </span>
-                  )}
                 </div>
                 {!expanded && (
                   <button
-                    onClick={() => onExpand(node.fqn)}
+                    onClick={(e) => { e.stopPropagation(); onExpand(node.fqn) }}
                     className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white dark:bg-zinc-700 border border-gray-300 dark:border-zinc-500 shadow flex items-center justify-center hover:bg-gray-50 dark:hover:bg-zinc-600 transition-colors"
                     style={{ zIndex: 2 }}
                   >
@@ -635,9 +628,56 @@ function LineageGraph({
             No downstream
           </div>
         )}
+
+        {/* Tooltip */}
+        {tooltip && tooltip.node && (
+          <div
+            className="absolute z-50 pointer-events-none"
+            style={{ left: tooltip.x, top: tooltip.y, transform: "translate(-50%, -100%)" }}
+          >
+            <div className="bg-gray-900 text-white rounded-lg shadow-xl px-4 py-3 text-sm min-w-[220px] max-w-[320px]">
+              <table className="w-full">
+                <tbody>
+                  <tr>
+                    <td className="text-gray-400 pr-3 py-0.5 font-medium whitespace-nowrap">Name</td>
+                    <td className="text-white py-0.5 font-semibold">{tooltip.node.name}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-400 pr-3 py-0.5 font-medium whitespace-nowrap">Location</td>
+                    <td className="text-white py-0.5">{tooltip.node.schema}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-400 pr-3 py-0.5 font-medium whitespace-nowrap">Database</td>
+                    <td className="text-white py-0.5">{tooltip.node.database}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-400 pr-3 py-0.5 font-medium whitespace-nowrap">Type</td>
+                    <td className="text-white py-0.5">{tooltip.node.type || "—"}</td>
+                  </tr>
+                  {tooltip.node.process && (
+                    <tr>
+                      <td className="text-gray-400 pr-3 py-0.5 font-medium whitespace-nowrap">Process</td>
+                      <td className="text-white py-0.5">{tooltip.node.process}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-center">
+              <div className="w-3 h-3 bg-gray-900 rotate-45 -mt-1.5" />
+            </div>
+          </div>
+        )}
+        </div>
       </div>
     </div>
   )
+}
+
+interface EdgeRelation {
+  from: string // parent fqn
+  to: string   // child fqn
+  direction: "upstream" | "downstream"
 }
 
 function buildExpandedTree(
@@ -645,9 +685,10 @@ function buildExpandedTree(
   baseDown: LineageNode[],
   expanded: Record<string, ExpandedData>,
   targetFqn: string
-): { upNodes: LineageNode[]; downNodes: LineageNode[] } {
+): { upNodes: LineageNode[]; downNodes: LineageNode[]; edges: EdgeRelation[] } {
   const allSeen = new Set<string>()
   allSeen.add(targetFqn.toUpperCase())
+  const edges: EdgeRelation[] = []
 
   const upNodes: LineageNode[] = []
   for (const node of baseUp) {
@@ -655,6 +696,8 @@ function buildExpandedTree(
     if (!allSeen.has(key)) {
       allSeen.add(key)
       upNodes.push(node)
+      // Level 1 upstream nodes connect to target
+      edges.push({ from: node.fqn, to: targetFqn, direction: "upstream" })
     }
   }
 
@@ -664,6 +707,8 @@ function buildExpandedTree(
     if (!allSeen.has(key)) {
       allSeen.add(key)
       downNodes.push(node)
+      // Level 1 downstream nodes connect from target
+      edges.push({ from: targetFqn, to: node.fqn, direction: "downstream" })
     }
   }
 
@@ -677,6 +722,7 @@ function buildExpandedTree(
         if (!allSeen.has(key)) {
           allSeen.add(key)
           upNodes.push({ ...node, level: parentUp.level + 1 })
+          edges.push({ from: node.fqn, to: parentFqn, direction: "upstream" })
         }
       }
     }
@@ -686,12 +732,13 @@ function buildExpandedTree(
         if (!allSeen.has(key)) {
           allSeen.add(key)
           downNodes.push({ ...node, level: parentDown.level + 1 })
+          edges.push({ from: parentFqn, to: node.fqn, direction: "downstream" })
         }
       }
     }
   }
 
-  return { upNodes, downNodes }
+  return { upNodes, downNodes, edges }
 }
 
 function groupByLevel(nodes: LineageNode[]): Record<number, LineageNode[]> {
@@ -704,66 +751,4 @@ function groupByLevel(nodes: LineageNode[]): Record<number, LineageNode[]> {
   return map
 }
 
-function LineageSection({
-  title,
-  icon,
-  nodes,
-  color,
-}: {
-  title: string
-  icon: React.ReactNode
-  nodes: LineageNode[]
-  color: "blue" | "amber"
-}) {
-  const headerColor = color === "blue"
-    ? "text-blue-600 dark:text-blue-400"
-    : "text-amber-600 dark:text-amber-400"
 
-  const grouped = groupByLevel(nodes)
-  const levels = Object.keys(grouped).map(Number).sort((a, b) => a - b)
-
-  return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <div className="px-4 py-3 bg-muted/50 flex items-center gap-2">
-        <span className={headerColor}>{icon}</span>
-        <h3 className={`text-sm font-semibold ${headerColor}`}>{title}</h3>
-        <span className="ml-auto text-xs text-muted-foreground">{nodes.length} object{nodes.length !== 1 ? "s" : ""}</span>
-      </div>
-      {nodes.length === 0 ? (
-        <div className="px-4 py-6 text-center text-sm text-muted-foreground">No dependencies found</div>
-      ) : (
-        <div className="divide-y divide-border">
-          {levels.map((level) =>
-            grouped[level].map((node, i) => (
-              <div key={`${level}-${i}`} className="px-4 py-2.5 hover:bg-muted/30 flex items-center gap-3">
-                <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-muted text-muted-foreground">
-                  L{level}
-                </span>
-                <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${typeColor(node.type)}`}>
-                  {node.type}
-                </span>
-                <span className="font-mono text-xs truncate" title={node.fqn}>
-                  {node.fqn}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function typeColor(type: string): string {
-  const colors: Record<string, string> = {
-    TABLE: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    VIEW: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    PROCEDURE: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
-    PIPE: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-    FUNCTION: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400",
-    STAGE: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    STREAM: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400",
-    TASK: "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400",
-  }
-  return colors[type?.toUpperCase()] || "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
-}

@@ -55,6 +55,31 @@ export async function GET(request: NextRequest) {
       "LIMIT 20"
     )
 
+    // Tasks: find tasks that write TO this object (task is upstream orchestrator)
+    const tasksWriting = await querySnowflake(
+      "SELECT DISTINCT database_name, schema_name, name AS task_name " +
+      "FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY " +
+      "WHERE query_text ILIKE '%" + objName + "%' " +
+      "AND (query_text ILIKE '%INTO%" + schemaName + "%" + objName + "%' " +
+      "OR query_text ILIKE '%MERGE%" + schemaName + "%" + objName + "%') " +
+      (dbName ? "AND query_text ILIKE '%" + dbName + "%' " : "") +
+      "AND scheduled_time > DATEADD('day', -30, CURRENT_TIMESTAMP()) " +
+      "AND state = 'SUCCEEDED' " +
+      "LIMIT 10"
+    )
+
+    // Tasks: find tasks that read FROM this object (task is downstream orchestrator)
+    const tasksReading = await querySnowflake(
+      "SELECT DISTINCT database_name, schema_name, name AS task_name " +
+      "FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY " +
+      "WHERE query_text ILIKE '%FROM%" + schemaName + "%" + objName + "%' " +
+      "AND query_text NOT ILIKE '%INTO%" + schemaName + "%" + objName + "%' " +
+      (dbName ? "AND query_text ILIKE '%" + dbName + "%' " : "") +
+      "AND scheduled_time > DATEADD('day', -30, CURRENT_TIMESTAMP()) " +
+      "AND state = 'SUCCEEDED' " +
+      "LIMIT 10"
+    )
+
     const parseContext = (tag: string, role: string, warehouse: string) => {
       let process = role || ""
       if (tag) {
@@ -95,7 +120,29 @@ export async function GET(request: NextRequest) {
       .map((r) => parseFqn(r.TARGET_REF || "", r))
       .filter((x): x is NonNullable<typeof x> => x !== null && !x.name.includes(objName))
 
-    return Response.json({ upstream: upFormatted, downstream: downFormatted })
+    // Format tasks as nodes that sit between source and target
+    const taskNodes = [
+      ...tasksWriting.map((r) => ({
+        database: r.DATABASE_NAME,
+        schema: r.SCHEMA_NAME,
+        name: r.TASK_NAME,
+        type: "TASK",
+        level: 1,
+        fqn: `${r.DATABASE_NAME}.${r.SCHEMA_NAME}.${r.TASK_NAME}`,
+        role: "upstream_task", // signals: this task writes TO the target
+      })),
+      ...tasksReading.map((r) => ({
+        database: r.DATABASE_NAME,
+        schema: r.SCHEMA_NAME,
+        name: r.TASK_NAME,
+        type: "TASK",
+        level: 1,
+        fqn: `${r.DATABASE_NAME}.${r.SCHEMA_NAME}.${r.TASK_NAME}`,
+        role: "downstream_task", // signals: this task reads FROM the target
+      })),
+    ]
+
+    return Response.json({ upstream: upFormatted, downstream: downFormatted, tasks: taskNodes })
   } catch (e) {
     console.error(new Date().toISOString(), "[lineage/dml]", e)
     return Response.json(
