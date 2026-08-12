@@ -33,9 +33,9 @@ interface ExpandedData {
   downstream: LineageNode[]
 }
 
-export function LineageView() {
-  const [objectInput, setObjectInput] = useState("")
-  const [searchObject, setSearchObject] = useState("")
+export function LineagePanel({ initialTarget }: { initialTarget?: string }) {
+  const [objectInput, setObjectInput] = useState(initialTarget || "")
+  const [searchObject, setSearchObject] = useState(initialTarget || "")
   const [depth, setDepth] = useState(1)
   const [expandedNodes, setExpandedNodes] = useState<Record<string, ExpandedData>>({})
   const [expandingNode, setExpandingNode] = useState<string | null>(null)
@@ -194,49 +194,51 @@ export function LineageView() {
   }, [expandedNodes])
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-semibold">Object Lineage</h2>
+    <div className="space-y-4">
+      {!initialTarget && (
+        <>
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+            <div className="relative w-full sm:w-96">
+              <input
+                type="text"
+                value={objectInput}
+                onChange={(e) => setObjectInput(e.target.value)}
+                placeholder="OBJECT_NAME or DATABASE.SCHEMA.OBJECT_NAME"
+                className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full font-mono pr-8"
+              />
+              {resolving && (
+                <Search className="w-4 h-4 absolute right-2.5 top-2.5 text-muted-foreground animate-pulse" />
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={!objectInput.trim() || resolving}
+              className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Show Lineage
+            </button>
+          </form>
 
-      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-        <div className="relative w-full sm:w-96">
-          <input
-            type="text"
-            value={objectInput}
-            onChange={(e) => setObjectInput(e.target.value)}
-            placeholder="OBJECT_NAME or DATABASE.SCHEMA.OBJECT_NAME"
-            className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full font-mono pr-8"
-          />
-          {resolving && (
-            <Search className="w-4 h-4 absolute right-2.5 top-2.5 text-muted-foreground animate-pulse" />
+          {resolving && <div className="text-muted-foreground text-sm animate-pulse">Loading DB and Schema...</div>}
+          {resolveError && <div className="text-destructive text-sm">{resolveError}</div>}
+
+          {resolveMatches && (
+            <div className="border border-border rounded-lg p-4 space-y-2">
+              <p className="text-sm text-muted-foreground">Multiple objects found. Select one:</p>
+              <div className="space-y-1">
+                {resolveMatches.map((m, i) => (
+                  <button
+                    key={i}
+                    onClick={() => selectMatch(m)}
+                    className="block w-full text-left px-3 py-2 text-sm font-mono rounded-md hover:bg-muted/50 border border-transparent hover:border-border transition-colors"
+                  >
+                    {m.fqn}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
-        </div>
-        <button
-          type="submit"
-          disabled={!objectInput.trim() || resolving}
-          className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Show Lineage
-        </button>
-      </form>
-
-      {resolving && <div className="text-muted-foreground text-sm animate-pulse">Loading DB and Schema...</div>}
-      {resolveError && <div className="text-destructive text-sm">{resolveError}</div>}
-
-      {resolveMatches && (
-        <div className="border border-border rounded-lg p-4 space-y-2">
-          <p className="text-sm text-muted-foreground">Multiple objects found. Select one:</p>
-          <div className="space-y-1">
-            {resolveMatches.map((m, i) => (
-              <button
-                key={i}
-                onClick={() => selectMatch(m)}
-                className="block w-full text-left px-3 py-2 text-sm font-mono rounded-md hover:bg-muted/50 border border-transparent hover:border-border transition-colors"
-              >
-                {m.fqn}
-              </button>
-            ))}
-          </div>
-        </div>
+        </>
       )}
 
       {loadingPhase === "deps" && (
@@ -272,6 +274,15 @@ export function LineageView() {
           />
         </>
       )}
+    </div>
+  )
+}
+
+export function LineageView() {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-semibold">Object Lineage</h2>
+      <LineagePanel />
     </div>
   )
 }

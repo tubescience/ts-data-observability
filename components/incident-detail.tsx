@@ -4,6 +4,7 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { X, AlertTriangle, TrendingUp, GitBranch } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
+import { LineagePanel } from "./lineage-view"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 
 interface HistoryPoint {
@@ -281,53 +282,11 @@ function formatPST(iso: string | null): string {
   }
 }
 
-interface LineageNode {
-  database: string
-  schema: string
-  name: string
-  type: string
-  fqn: string
-}
-
 function LineageGraphPopup({ target, onClose }: { target: string; onClose: () => void }) {
-  const { data, isLoading, error } = useQuery<{ upstream: LineageNode[]; downstream: LineageNode[] }>({
-    queryKey: ["lineage", target],
-    queryFn: () =>
-      fetch(`/api/lineage?object=${encodeURIComponent(target)}`).then((r) => {
-        if (!r.ok) return r.json().then((e) => Promise.reject(new Error(e.error)))
-        return r.json()
-      }),
-  })
-
-  const nodeHeight = 40
-  const nodeWidth = 240
-  const horizontalGap = 160
-
-  const upstream = data?.upstream || []
-  const downstream = data?.downstream || []
-  const maxSide = Math.max(upstream.length, downstream.length, 1)
-  const verticalGap = 12
-  const svgHeight = Math.max(maxSide * (nodeHeight + verticalGap) + 80, 260)
-  const svgWidth = nodeWidth * 3 + horizontalGap * 2 + 40
-
-  const centerX = svgWidth / 2
-  const centerY = svgHeight / 2
-  const upstreamX = 20
-  const targetX = centerX - nodeWidth / 2
-  const downstreamX = svgWidth - nodeWidth - 20
-
-  function getNodeY(index: number, total: number): number {
-    const totalHeight = total * nodeHeight + (total - 1) * verticalGap
-    const startY = centerY - totalHeight / 2
-    return startY + index * (nodeHeight + verticalGap)
-  }
-
-  const targetName = target.split(".").pop() || target
-
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
       <div
-        className="bg-card border border-border rounded-lg shadow-xl w-full max-w-5xl max-h-[85vh] overflow-auto"
+        className="bg-card border border-border rounded-lg shadow-xl w-full max-w-6xl max-h-[85vh] overflow-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
@@ -340,91 +299,8 @@ function LineageGraphPopup({ target, onClose }: { target: string; onClose: () =>
             <X className="w-5 h-5" />
           </button>
         </div>
-
         <div className="p-4">
-          {isLoading && <div className="text-muted-foreground py-12 text-center">Loading lineage...</div>}
-          {error && <div className="text-destructive py-8 text-center text-sm">{(error as Error).message}</div>}
-
-          {data && (
-            <div className="overflow-auto">
-              <svg width={svgWidth} height={svgHeight} className="mx-auto block">
-                <defs>
-                  <marker id="arr-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                    <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" />
-                  </marker>
-                  <marker id="arr-amber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                    <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" />
-                  </marker>
-                </defs>
-
-                {/* Lines: upstream -> target */}
-                {upstream.map((_, i) => {
-                  const y = getNodeY(i, upstream.length) + nodeHeight / 2
-                  return (
-                    <path
-                      key={`ul-${i}`}
-                      d={`M ${upstreamX + nodeWidth} ${y} C ${upstreamX + nodeWidth + horizontalGap / 2} ${y}, ${targetX - horizontalGap / 2} ${centerY}, ${targetX} ${centerY}`}
-                      fill="none" stroke="#3b82f6" strokeWidth={1.5} opacity={0.6} markerEnd="url(#arr-blue)"
-                    />
-                  )
-                })}
-
-                {/* Lines: target -> downstream */}
-                {downstream.map((_, i) => {
-                  const y = getNodeY(i, downstream.length) + nodeHeight / 2
-                  return (
-                    <path
-                      key={`dl-${i}`}
-                      d={`M ${targetX + nodeWidth} ${centerY} C ${targetX + nodeWidth + horizontalGap / 2} ${centerY}, ${downstreamX - horizontalGap / 2} ${y}, ${downstreamX} ${y}`}
-                      fill="none" stroke="#f59e0b" strokeWidth={1.5} opacity={0.6} markerEnd="url(#arr-amber)"
-                    />
-                  )
-                })}
-
-                {/* Upstream nodes */}
-                {upstream.map((node, i) => {
-                  const y = getNodeY(i, upstream.length)
-                  return (
-                    <g key={`un-${i}`}>
-                      <rect x={upstreamX} y={y} width={nodeWidth} height={nodeHeight} rx={6} fill="var(--card)" stroke="#3b82f6" strokeWidth={1.5} />
-                      <text x={upstreamX + 8} y={y + 15} fontSize={9} fill="#3b82f6" fontWeight="bold">{node.type}</text>
-                      <text x={upstreamX + 8} y={y + 30} fontSize={10} fill="currentColor" className="fill-foreground">
-                        {node.name.length > 30 ? node.name.slice(0, 28) + "…" : node.name}
-                      </text>
-                    </g>
-                  )
-                })}
-
-                {/* Target node */}
-                <rect x={targetX} y={centerY - nodeHeight / 2} width={nodeWidth} height={nodeHeight} rx={6} fill="var(--primary)" opacity={0.15} stroke="var(--primary)" strokeWidth={2} />
-                <text x={centerX} y={centerY - 4} textAnchor="middle" fontSize={9} fill="var(--primary)" fontWeight="bold">TARGET</text>
-                <text x={centerX} y={centerY + 12} textAnchor="middle" fontSize={11} fill="currentColor" className="fill-foreground" fontWeight="600">
-                  {targetName.length > 26 ? targetName.slice(0, 24) + "…" : targetName}
-                </text>
-
-                {/* Downstream nodes */}
-                {downstream.map((node, i) => {
-                  const y = getNodeY(i, downstream.length)
-                  return (
-                    <g key={`dn-${i}`}>
-                      <rect x={downstreamX} y={y} width={nodeWidth} height={nodeHeight} rx={6} fill="var(--card)" stroke="#f59e0b" strokeWidth={1.5} />
-                      <text x={downstreamX + 8} y={y + 15} fontSize={9} fill="#f59e0b" fontWeight="bold">{node.type}</text>
-                      <text x={downstreamX + 8} y={y + 30} fontSize={10} fill="currentColor" className="fill-foreground">
-                        {node.name.length > 30 ? node.name.slice(0, 28) + "…" : node.name}
-                      </text>
-                    </g>
-                  )
-                })}
-
-                {upstream.length === 0 && (
-                  <text x={upstreamX + nodeWidth / 2} y={centerY} textAnchor="middle" fontSize={12} fill="var(--muted-foreground)">No upstream</text>
-                )}
-                {downstream.length === 0 && (
-                  <text x={downstreamX + nodeWidth / 2} y={centerY} textAnchor="middle" fontSize={12} fill="var(--muted-foreground)">No downstream</text>
-                )}
-              </svg>
-            </div>
-          )}
+          <LineagePanel initialTarget={target} />
         </div>
       </div>
     </div>
