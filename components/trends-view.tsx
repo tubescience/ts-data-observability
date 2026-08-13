@@ -58,7 +58,7 @@ export function TrendsView() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} stroke="var(--muted-foreground)" width={35} />
                 <Tooltip
                   contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: 12 }}
-                  formatter={(value: number) => [`${value}%`, "Health Score"]}
+                  formatter={(value) => [`${value}%`, "Health Score"]}
                 />
                 <Line type="monotone" dataKey="healthScore" stroke="#22c55e" strokeWidth={2} dot={{ r: 2 }} />
               </LineChart>

@@ -143,7 +143,51 @@ export async function GET(request: NextRequest) {
       })),
     ]
 
-    return Response.json({ upstream: upFormatted, downstream: downFormatted, tasks: taskNodes })
+    // Runtime consumers: roles/users that SELECT from this object
+    let consumers: Record<string, any>[] = []
+    try {
+      consumers = await querySnowflake(
+        "SELECT role_name, " +
+        "CASE " +
+        "WHEN role_name ILIKE '%RETOOL%' THEN 'RETOOL' " +
+        "WHEN role_name ILIKE '%TABLEAU%' OR role_name ILIKE '%LOOKER%' OR role_name ILIKE '%SIGMA%' THEN 'BI_TOOL' " +
+        "WHEN role_name ILIKE '%CORTEX%' OR role_name ILIKE '%MCP%' OR role_name ILIKE '%AGENT%' THEN 'AGENT' " +
+        "WHEN role_name ILIKE '%DBT%' OR role_name ILIKE '%COALESCE%' THEN 'ETL' " +
+        "ELSE 'APP' END AS consumer_type, " +
+        "COUNT(*) AS query_count " +
+        "FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY " +
+        "WHERE query_text ILIKE '%FROM%" + schemaName + "%" + objName + "%' " +
+        (dbName ? "AND query_text ILIKE '%" + dbName + "%' " : "") +
+        "AND start_time > DATEADD('day', -14, CURRENT_TIMESTAMP()) " +
+        "AND execution_status = 'SUCCESS' " +
+        "AND query_text NOT ILIKE '%CREATE%' " +
+        "AND query_text NOT ILIKE '%INSERT%INTO%" + objName + "%' " +
+        "AND query_text NOT ILIKE '%MERGE%INTO%" + objName + "%' " +
+        "GROUP BY 1, 2 HAVING COUNT(*) >= 3 " +
+        "ORDER BY query_count DESC LIMIT 8"
+      )
+    } catch {}
+
+    const consumerNames: Record<string, string> = {
+      RETOOL: "Retool",
+      BI_TOOL: "BI Tool",
+      AGENT: "Cortex Agent",
+      ETL: "ETL Pipeline",
+      APP: "Application",
+    }
+
+    const consumerNodes = consumers.map((r) => ({
+      database: "",
+      schema: r.ROLE_NAME,
+      name: consumerNames[r.CONSUMER_TYPE] || r.CONSUMER_TYPE,
+      type: r.CONSUMER_TYPE,
+      level: 1,
+      fqn: `CONSUMER.${r.CONSUMER_TYPE}.${r.ROLE_NAME}`,
+      process: `Role: ${r.ROLE_NAME} (${r.QUERY_COUNT} queries/14d)`,
+      role: "downstream_consumer",
+    }))
+
+    return Response.json({ upstream: upFormatted, downstream: downFormatted, tasks: taskNodes, consumers: consumerNodes })
   } catch (e) {
     console.error(new Date().toISOString(), "[lineage/dml]", e)
     return Response.json(

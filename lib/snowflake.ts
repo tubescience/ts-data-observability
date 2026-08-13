@@ -88,35 +88,65 @@ interface QueryOptions {
   warehouse?: string
 }
 
+// Persistent connection to avoid reconnecting every request
+let cachedConn: any = null
+let connReady = false
+let connPromise: Promise<any> | null = null
+
+function getOrCreateConnection(): Promise<any> {
+  if (cachedConn && connReady) return Promise.resolve(cachedConn)
+  if (connPromise) return connPromise
+
+  connPromise = new Promise((resolve, reject) => {
+    const config = getConnectionConfig()
+    const conn = snowflake.createConnection(config)
+    conn.connect((err: any) => {
+      if (err) {
+        connPromise = null
+        return reject(new Error(`Snowflake connection failed: ${err.message}`))
+      }
+      cachedConn = conn
+      connReady = true
+      resolve(conn)
+    })
+  })
+
+  connPromise.catch(() => { connPromise = null; cachedConn = null; connReady = false })
+  return connPromise
+}
+
 export async function querySnowflake(
   query: string,
   options: QueryOptions = {}
 ): Promise<Record<string, any>[]> {
-  const config = getConnectionConfig()
-  const conn = snowflake.createConnection(config)
+  let conn: any
+  try {
+    conn = await getOrCreateConnection()
+  } catch {
+    // Retry once with fresh connection
+    cachedConn = null; connReady = false; connPromise = null
+    conn = await getOrCreateConnection()
+  }
 
   return new Promise((resolve, reject) => {
-    conn.connect((err) => {
-      if (err) {
-        return reject(new Error(`Snowflake connection failed: ${err.message}`))
-      }
+    const execOpts: any = { sqlText: query }
+    if (options.warehouse) {
+      execOpts.parameters = { QUERY_WAREHOUSE_NAME: options.warehouse }
+    }
 
-      const execOpts: any = { sqlText: query }
-      if (options.warehouse) {
-        execOpts.parameters = { QUERY_WAREHOUSE_NAME: options.warehouse }
-      }
-
-      conn.execute({
-        ...execOpts,
-        complete: (err, _stmt, rows) => {
-          conn.destroy(() => {})
-          if (err) {
-            reject(new Error(`Query failed: ${err.message}`))
-          } else {
-            resolve((rows ?? []) as Record<string, any>[])
+    conn.execute({
+      ...execOpts,
+      complete: (err: any, _stmt: any, rows: any) => {
+        if (err) {
+          // If connection dropped, clear cache for next attempt
+          if (err.message?.includes("not connected") || err.code === "410001") {
+            cachedConn = null; connReady = false; connPromise = null
           }
-        },
-      })
+          reject(new Error(`Query failed: ${err.message}`))
+        } else {
+          resolve((rows ?? []) as Record<string, any>[])
+        }
+      },
     })
   })
 }

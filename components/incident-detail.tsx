@@ -386,7 +386,7 @@ function LineageGraphPopup({ target, onClose }: { target: string; onClose: () =>
           </button>
         </div>
         <div className="p-4">
-          <LineagePanel initialTarget={target} />
+          <LineagePanel initialTarget={target} maxDepth={1} />
         </div>
       </div>
     </div>

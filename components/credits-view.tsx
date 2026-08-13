@@ -20,6 +20,7 @@ interface AICostEntry {
   usageDate: string
   serviceType: string
   creditsUsed: number
+  userName?: string | null
 }
 
 const SERVICE_COLORS: Record<string, string> = {
@@ -38,7 +39,12 @@ export function CreditsView() {
   const [dateStart, setDateStart] = useState(today)
   const [dateEnd, setDateEnd] = useState(today)
   const [activeTab, setActiveTab] = useState<"warehouse" | "ai-costs">("warehouse")
-  const [aiDays, setAiDays] = useState("30")
+  const [aiStartDate, setAiStartDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7)
+    return d.toISOString().slice(0, 10)
+  })
+  const [aiEndDate, setAiEndDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [aiUserFilter, setAiUserFilter] = useState("")
   const [aiServiceFilter, setAiServiceFilter] = useState("")
 
   const { data, isLoading, error } = useQuery<CreditResult[]>({
@@ -46,10 +52,17 @@ export function CreditsView() {
     queryFn: () => fetch("/api/credits").then((r) => r.json()),
   })
 
-  const { data: aiData, isLoading: aiLoading, error: aiError } = useQuery<AICostEntry[]>({
-    queryKey: ["ai-costs", aiDays],
-    queryFn: () => fetch(`/api/credits/ai-costs?days=${aiDays}`).then((r) => r.json()),
+  const { data: aiResponse, isLoading: aiLoading, error: aiError } = useQuery<{ data: AICostEntry[]; users: string[] }>({
+    queryKey: ["ai-costs", aiStartDate, aiEndDate, aiUserFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ startDate: aiStartDate, endDate: aiEndDate })
+      if (aiUserFilter) params.set("user", aiUserFilter)
+      return fetch(`/api/credits/ai-costs?${params}`).then((r) => r.json())
+    },
   })
+
+  const aiData = aiResponse?.data || []
+  const aiUsers = aiResponse?.users || []
 
   const allResults = data || []
   const checkTypes = [...new Set(allResults.map((r) => r.checkType))].sort()
@@ -74,7 +87,7 @@ export function CreditsView() {
 
   const chartData = Object.values(warehouseData).sort((a, b) => b.credits - a.credits).slice(0, 10)
 
-  const allAiCosts = aiData || []
+  const allAiCosts = aiData
   const aiServiceTypes = useMemo(() => [...new Set(allAiCosts.map((r) => r.serviceType))].sort(), [allAiCosts])
 
   const filteredAiCosts = aiServiceFilter
@@ -200,13 +213,22 @@ export function CreditsView() {
       {activeTab === "ai-costs" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
-            <select value={aiDays} onChange={(e) => setAiDays(e.target.value)}
+            <input
+              type="date"
+              value={aiStartDate}
+              onChange={(e) => setAiStartDate(e.target.value)}
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+            />
+            <input
+              type="date"
+              value={aiEndDate}
+              onChange={(e) => setAiEndDate(e.target.value)}
+              className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+            />
+            <select value={aiUserFilter} onChange={(e) => setAiUserFilter(e.target.value)}
               className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto">
-              <option value="7">Last 7 days</option>
-              <option value="14">Last 14 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="60">Last 60 days</option>
-              <option value="90">Last 90 days</option>
+              <option value="">All Users</option>
+              {aiUsers.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
             <select value={aiServiceFilter} onChange={(e) => setAiServiceFilter(e.target.value)}
               className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto">
