@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, AlertTriangle, TrendingUp, GitBranch, Search, Copy, Check } from "lucide-react"
+import { X, AlertTriangle, TrendingUp, GitBranch } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
@@ -49,40 +49,6 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [showLineageGraph, setShowLineageGraph] = useState(false)
-  const [diagnosing, setDiagnosing] = useState(false)
-  const [diagnosis, setDiagnosis] = useState<{ validation: any; suggestions: any[] } | null>(null)
-  const [diagError, setDiagError] = useState("")
-
-  const runDiagnosis = async () => {
-    setDiagnosing(true)
-    setDiagnosis(null)
-    setDiagError("")
-    try {
-      const res = await fetch("/api/incidents/diagnose", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          checkType: incident.checkType,
-          targetTable: incident.targetTable,
-          groupValue: incident.groupValue,
-          severity: incident.severity,
-          lastMetric: incident.lastMetric,
-          lastThreshold: incident.lastThreshold,
-          failureCount: incident.failureCount,
-        }),
-      })
-      const text = await res.text()
-      if (!res.ok) {
-        try { setDiagError(JSON.parse(text).error) } catch { setDiagError(text || `Error ${res.status}`) }
-        return
-      }
-      setDiagnosis(JSON.parse(text))
-    } catch (err) {
-      setDiagError(err instanceof Error ? err.message : "Diagnosis failed")
-    } finally {
-      setDiagnosing(false)
-    }
-  }
 
   const params = new URLSearchParams({
     checkType: incident.checkType,
@@ -272,49 +238,6 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           )}
         </div>
 
-        {/* Diagnosis Results */}
-        {diagnosing && (
-          <div className="px-4 py-6 border-t border-border">
-            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 animate-pulse">
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Diagnosing... running validation + AI analysis
-            </div>
-          </div>
-        )}
-        {diagError && (
-          <div className="px-4 py-3 border-t border-border">
-            <div className="text-destructive text-sm">{diagError}</div>
-          </div>
-        )}
-        {diagnosis && (
-          <div className="px-4 py-4 border-t border-border space-y-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">Diagnosis</h3>
-              {diagnosis.validation.stillFailing ? (
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                  Still Failing
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  Appears Resolved
-                </span>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground">{diagnosis.validation.details}</p>
-
-            {diagnosis.suggestions.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Suggested Resolutions</h4>
-                {diagnosis.suggestions.map((s: any, i: number) => (
-                  <DiagnosisSuggestion key={i} suggestion={s} index={i} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Actions */}
         <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 p-4 border-t border-border sticky bottom-0 bg-card">
@@ -331,14 +254,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             <GitBranch className="w-4 h-4" />
             View Lineage
           </button>
-          <button
-            onClick={runDiagnosis}
-            disabled={diagnosing}
-            className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-amber-500 text-amber-600 dark:text-amber-400 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Search className="w-4 h-4" />
-            {diagnosing ? "Diagnosing..." : "Diagnose & Suggest Fix"}
-          </button>
+
           <button
             onClick={() => onResolve(incident)}
             className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
@@ -393,52 +309,3 @@ function LineageGraphPopup({ target, onClose }: { target: string; onClose: () =>
   )
 }
 
-function DiagnosisSuggestion({ suggestion, index }: { suggestion: any; index: number }) {
-  const [copied, setCopied] = useState(false)
-
-  const copySQL = () => {
-    if (!suggestion.sql) return
-    navigator.clipboard.writeText(suggestion.sql)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const priorityColor = suggestion.priority === "high"
-    ? "border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20"
-    : suggestion.priority === "medium"
-    ? "border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20"
-    : "border-border bg-muted/20"
-
-  return (
-    <div className={`border rounded-lg p-3 ${priorityColor}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-muted-foreground">{index + 1}.</span>
-            <span className="text-sm font-medium">{suggestion.title}</span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
-              suggestion.priority === "high" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-              suggestion.priority === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-              "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-            }`}>{suggestion.priority}</span>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">{suggestion.description}</p>
-        </div>
-      </div>
-      {suggestion.sql && (
-        <div className="mt-2 flex items-start gap-2">
-          <pre className="flex-1 text-[11px] font-mono bg-black/5 dark:bg-white/5 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-all">
-            {suggestion.sql}
-          </pre>
-          <button
-            onClick={copySQL}
-            className="shrink-0 p-1.5 rounded hover:bg-muted transition-colors"
-            title="Copy SQL"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
