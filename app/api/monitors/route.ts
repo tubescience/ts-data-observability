@@ -10,12 +10,12 @@ function toIso(val: unknown): string | null {
 export async function GET() {
   try {
     await querySnowflake("USE ROLE MCP_MONITOR")
-    const [monitorRows, configRows] = await Promise.all([
+    const [monitorRows, configRows, lastRunRows] = await Promise.all([
       querySnowflake(`
         SELECT
           MONITOR_ID, MONITOR_NAME, TARGET_DATABASE, TARGET_SCHEMA,
           TARGET_TABLE, ENABLED, OWNER, DESCRIPTION,
-          SCHEDULE_CRON, WAREHOUSE, TASK_NAME,
+          SCHEDULE_CRON, WAREHOUSE, TASK_NAME, TAGS,
           CONVERT_TIMEZONE('America/Los_Angeles', CREATED_AT) as CREATED_AT_PST
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_MONITORS
         ORDER BY MONITOR_NAME
@@ -28,6 +28,13 @@ export async function GET() {
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG
         ORDER BY MONITOR_ID, CHECK_TYPE
       `),
+      querySnowflake(`
+        SELECT MONITOR_ID,
+          CONVERT_TIMEZONE('America/Los_Angeles', MAX(RUN_START)) AS LAST_RUN
+        FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RUN_LOG
+        WHERE STATUS = 'SUCCESS'
+        GROUP BY MONITOR_ID
+      `).catch(() => [] as Record<string, any>[]),
     ])
 
     const checksByMonitor: Record<number, any[]> = {}
@@ -49,6 +56,11 @@ export async function GET() {
       })
     }
 
+    const lastRunByMonitor: Record<number, string> = {}
+    for (const r of lastRunRows) {
+      if (r.MONITOR_ID) lastRunByMonitor[r.MONITOR_ID] = toIso(r.LAST_RUN) || ""
+    }
+
     const monitors = monitorRows.map((r) => ({
       monitorId: r.MONITOR_ID,
       monitorName: r.MONITOR_NAME,
@@ -61,7 +73,9 @@ export async function GET() {
       scheduleCron: r.SCHEDULE_CRON,
       warehouse: r.WAREHOUSE,
       taskName: r.TASK_NAME,
+      tags: r.TAGS ? r.TAGS.split(",").map((t: string) => t.trim()).filter(Boolean) : [],
       createdAt: toIso(r.CREATED_AT_PST),
+      lastRun: lastRunByMonitor[r.MONITOR_ID] || null,
       checks: checksByMonitor[r.MONITOR_ID] || [],
     }))
 

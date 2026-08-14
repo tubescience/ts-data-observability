@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ResolvedIncidentDetail } from "@/components/resolved-incident-detail"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
+import { useTagColors, TagBadges } from "@/components/tag-colors"
 
 interface ResolvedIncident {
   incidentId: number
@@ -11,6 +12,7 @@ interface ResolvedIncident {
   checkType: string
   targetTable: string
   groupValue: string | null
+  tags: string[]
   severity: string
   failureCount: number
   resolutionNotes: string | null
@@ -24,12 +26,14 @@ function getPSTToday(): string {
 }
 
 export function ResolvedIncidents() {
+  const tagColors = useTagColors()
   const today = getPSTToday()
   const [dateStart, setDateStart] = useState(today)
   const [dateEnd, setDateEnd] = useState(today)
   const [severityFilter, setSeverityFilter] = useState("")
   const [checkFilter, setCheckFilter] = useState("")
   const [targetFilter, setTargetFilter] = useState("")
+  const [tagFilter, setTagFilter] = useState("")
   const [viewing, setViewing] = useState<ResolvedIncident | null>(null)
 
   const { data, isLoading, error } = useQuery<ResolvedIncident[]>({
@@ -40,11 +44,13 @@ export function ResolvedIncidents() {
   const allIncidents = data || []
   const severities = [...new Set(allIncidents.map((i) => i.severity))].sort()
   const checkTypes = [...new Set(allIncidents.map((i) => i.checkType))].sort()
+  const allTags = [...new Set(allIncidents.flatMap((i) => i.tags || []))].sort()
 
   const incidents = allIncidents.filter((i) => {
     if (severityFilter && i.severity !== severityFilter) return false
     if (checkFilter && i.checkType !== checkFilter) return false
     if (targetFilter && !i.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
+    if (tagFilter && !(i.tags || []).includes(tagFilter)) return false
     return true
   })
 
@@ -70,6 +76,13 @@ export function ResolvedIncidents() {
       label: "Resolved At",
       className: "text-xs text-muted-foreground",
       render: (val) => formatPST(val),
+    },
+    {
+      key: "tags",
+      label: "Tags",
+      className: "text-xs",
+      hideOnMobile: true,
+      render: (_, row) => <TagBadges tags={(row as any).tags || []} colorMap={tagColors} />,
     },
     {
       key: "resolutionNotes",
@@ -124,6 +137,14 @@ export function ResolvedIncidents() {
           placeholder="Filter target..."
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-48"
         />
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+        >
+          <option value="">All Tags</option>
+          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
 
       {isLoading && <div className="text-muted-foreground">Loading...</div>}

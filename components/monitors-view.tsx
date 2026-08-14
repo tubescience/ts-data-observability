@@ -2,8 +2,16 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CheckCircle, XCircle, ChevronDown, ChevronRight, BarChart3 } from "lucide-react"
+import { CheckCircle, XCircle, ChevronDown, ChevronRight, BarChart3, Copy, Check } from "lucide-react"
 import { MonitorHistory } from "@/components/monitor-history"
+import { useTagColors, TagBadge } from "@/components/tag-colors"
+
+function formatPST(iso: string | null): string {
+  if (!iso) return "—"
+  try {
+    return new Date(iso).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })
+  } catch { return "—" }
+}
 
 interface Check {
   configId: number
@@ -31,20 +39,25 @@ interface Monitor {
   scheduleCron: string | null
   warehouse: string | null
   taskName: string | null
+  tags: string[]
+  lastRun: string | null
   createdAt: string | null
   checks: Check[]
 }
 
 export function MonitorsView() {
+  const tagColors = useTagColors()
   const { data, isLoading, error } = useQuery<Monitor[]>({
     queryKey: ["monitors"],
     queryFn: () => fetch("/api/monitors").then((r) => r.json()),
   })
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [copiedId, setCopiedId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [checkTypeFilter, setCheckTypeFilter] = useState<string>("")  
   const [nameFilter, setNameFilter] = useState<string>("")
+  const [tagFilter, setTagFilter] = useState<string>("")
   const [historyMonitor, setHistoryMonitor] = useState<Monitor | null>(null)
 
   if (isLoading) return <div className="text-muted-foreground">Loading monitors...</div>
@@ -52,11 +65,13 @@ export function MonitorsView() {
 
   const allMonitors = data || []
   const allCheckTypes = [...new Set(allMonitors.flatMap((m) => m.checks.map((c) => c.checkType)))].sort()
+  const allTags = [...new Set(allMonitors.flatMap((m) => m.tags || []))].sort()
 
   const monitors = allMonitors.filter((m) => {
     if (statusFilter === "enabled" && !m.enabled) return false
     if (statusFilter === "disabled" && m.enabled) return false
     if (checkTypeFilter && !m.checks.some((c) => c.checkType === checkTypeFilter)) return false
+    if (tagFilter && !(m.tags || []).includes(tagFilter)) return false
     if (nameFilter) {
       const regex = new RegExp(`\\b${nameFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
       if (!regex.test(m.monitorName) && !regex.test(m.targetTable)) return false
@@ -107,6 +122,14 @@ export function MonitorsView() {
           <option value="">All Check Types</option>
           {allCheckTypes.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+        >
+          <option value="">All Tags</option>
+          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
 
       <div className="space-y-3">
@@ -127,7 +150,17 @@ export function MonitorsView() {
                 <XCircle className="w-4 h-4 text-red-500 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm">{m.monitorName}</div>
+                <div className="font-medium text-sm">
+                  {m.monitorName}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(String(m.monitorId)); setCopiedId(m.monitorId); setTimeout(() => setCopiedId(null), 1500) }}
+                    className="inline-flex items-center gap-0.5 ml-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                    title="Copy Monitor ID"
+                  >
+                    <span className="text-xs font-normal">#{m.monitorId}</span>
+                    {copiedId === m.monitorId ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {m.targetDatabase}.{m.targetSchema}.{m.targetTable}
                 </div>
@@ -135,8 +168,15 @@ export function MonitorsView() {
               <div className="text-xs text-muted-foreground shrink-0">
                 {m.checks.length} check{m.checks.length !== 1 ? "s" : ""}
               </div>
+              {m.tags.length > 0 && (
+                <div className="hidden md:flex flex-wrap gap-1 shrink-0">
+                  {m.tags.map((t) => (
+                    <TagBadge key={t} tag={t} colorMap={tagColors} />
+                  ))}
+                </div>
+              )}
               <div className="text-xs text-muted-foreground shrink-0 hidden md:block">
-                {m.scheduleCron || "—"}
+                {m.lastRun ? formatPST(m.lastRun) : "—"}
               </div>
             </button>
 
@@ -147,6 +187,7 @@ export function MonitorsView() {
                     <div><span className="text-muted-foreground">Owner:</span> {m.owner}</div>
                     <div><span className="text-muted-foreground">Warehouse:</span> {m.warehouse || "—"}</div>
                     <div><span className="text-muted-foreground">Schedule:</span> {m.scheduleCron || "—"}</div>
+                    <div><span className="text-muted-foreground">Last Run:</span> {formatPST(m.lastRun)}</div>
                     <div><span className="text-muted-foreground">Task:</span> {m.taskName || "—"}</div>
                   </div>
                   <button

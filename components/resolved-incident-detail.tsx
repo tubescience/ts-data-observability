@@ -22,6 +22,7 @@ interface ResolvedIncident {
   checkType: string
   targetTable: string
   groupValue: string | null
+  groupName?: string | null
   severity: string
   failureCount: number
   resolutionNotes: string | null
@@ -45,6 +46,14 @@ export function ResolvedIncidentDetail({ incident, onClose }: Props) {
   const defaults = getDefaultDates()
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
+
+  // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT
+  const { data: groupNameData } = useQuery<{ name: string | null }>({
+    queryKey: ["resolved-group-name", incident.checkType, incident.groupValue],
+    queryFn: () => fetch(`/api/incidents/group-name?checkType=${incident.checkType}&groupValue=${incident.groupValue || ""}`).then((r) => r.json()),
+    enabled: (incident.checkType === "SPEND_CLIENT" || incident.checkType === "SPEND_ACCOUNT") && !!incident.groupValue,
+  })
+  const groupName = incident.groupName || groupNameData?.name
 
   const params = new URLSearchParams({
     checkType: incident.checkType,
@@ -111,6 +120,7 @@ export function ResolvedIncidentDetail({ incident, onClose }: Props) {
           <div>
             <span className="text-muted-foreground text-xs">Group</span>
             <p className="text-xs mt-0.5">{incident.groupValue || "—"}</p>
+            {groupName && <p className="text-xs font-medium text-foreground">{groupName}</p>}
           </div>
           <div>
             <span className="text-muted-foreground text-xs">Severity</span>

@@ -17,16 +17,18 @@ export async function GET(request: NextRequest) {
     await querySnowflake("USE ROLE MCP_MONITOR")
     const rows = await querySnowflake(`
       SELECT
-        INCIDENT_ID, INCIDENT_KEY, CHECK_TYPE, TARGET_TABLE,
-        GROUP_VALUE, SEVERITY, FAILURE_COUNT, RESOLUTION_NOTES,
-        CONVERT_TIMEZONE('America/Los_Angeles', FIRST_SEEN) as FIRST_SEEN_PST,
-        CONVERT_TIMEZONE('America/Los_Angeles', LAST_SEEN) as LAST_SEEN_PST,
-        CONVERT_TIMEZONE('America/Los_Angeles', RESOLVED_AT) as RESOLVED_AT_PST
-      FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS
-      WHERE STATUS = 'RESOLVED'
-        AND CONVERT_TIMEZONE('America/Los_Angeles', RESOLVED_AT)::DATE >= '${dateStart}'
-        AND CONVERT_TIMEZONE('America/Los_Angeles', RESOLVED_AT)::DATE <= '${dateEnd}'
-      ORDER BY RESOLVED_AT DESC
+        i.INCIDENT_ID, i.INCIDENT_KEY, i.CHECK_TYPE, i.TARGET_TABLE,
+        i.GROUP_VALUE, i.SEVERITY, i.FAILURE_COUNT, i.RESOLUTION_NOTES,
+        CONVERT_TIMEZONE('America/Los_Angeles', i.FIRST_SEEN) as FIRST_SEEN_PST,
+        CONVERT_TIMEZONE('America/Los_Angeles', i.LAST_SEEN) as LAST_SEEN_PST,
+        CONVERT_TIMEZONE('America/Los_Angeles', i.RESOLVED_AT) as RESOLVED_AT_PST,
+        m.TAGS
+      FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS i
+      LEFT JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_MONITORS m ON m.MONITOR_ID = i.MONITOR_ID
+      WHERE i.STATUS = 'RESOLVED'
+        AND CONVERT_TIMEZONE('America/Los_Angeles', i.RESOLVED_AT)::DATE >= '${dateStart}'
+        AND CONVERT_TIMEZONE('America/Los_Angeles', i.RESOLVED_AT)::DATE <= '${dateEnd}'
+      ORDER BY i.RESOLVED_AT DESC
     `)
 
     const incidents = rows.map((r) => ({
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
       firstSeen: toIso(r.FIRST_SEEN_PST),
       lastSeen: toIso(r.LAST_SEEN_PST),
       resolvedAt: toIso(r.RESOLVED_AT_PST),
+      tags: r.TAGS ? r.TAGS.split(",").map((t: string) => t.trim()).filter(Boolean) : [],
     }))
 
     return Response.json(incidents)

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, AlertTriangle, TrendingUp, GitBranch } from "lucide-react"
+import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
@@ -23,6 +23,8 @@ interface Incident {
   checkType: string
   targetTable: string
   groupValue: string | null
+  groupName: string | null
+  tags: string[]
   severity: string
   status: string
   failureCount: number
@@ -49,6 +51,15 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [showLineageGraph, setShowLineageGraph] = useState(false)
+  const [copiedId, setCopiedId] = useState(false)
+
+  // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT
+  const { data: groupNameData } = useQuery<{ name: string | null }>({
+    queryKey: ["group-name", incident.checkType, incident.groupValue],
+    queryFn: () => fetch(`/api/incidents/group-name?checkType=${incident.checkType}&groupValue=${incident.groupValue || ""}`).then((r) => r.json()),
+    enabled: (incident.checkType === "SPEND_CLIENT" || incident.checkType === "SPEND_ACCOUNT") && !!incident.groupValue,
+  })
+  const groupName = groupNameData?.name
 
   const params = new URLSearchParams({
     checkType: incident.checkType,
@@ -94,6 +105,14 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             <h3 className="font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-orange-500 shrink-0" />
               Incident Detail
+              <button
+                onClick={() => { navigator.clipboard.writeText(String(incident.incidentId)); setCopiedId(true); setTimeout(() => setCopiedId(false), 1500) }}
+                className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy Incident ID"
+              >
+                <span className="text-xs font-normal">#{incident.incidentId}</span>
+                {copiedId ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+              </button>
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5 truncate">{incident.incidentKey}</p>
           </div>
@@ -115,6 +134,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           <div>
             <span className="text-muted-foreground text-xs">Group</span>
             <p className="text-xs mt-0.5">{incident.groupValue || "—"}</p>
+            {groupName && <p className="text-xs font-medium text-foreground">{groupName}</p>}
           </div>
           <div>
             <span className="text-muted-foreground text-xs">Severity</span>

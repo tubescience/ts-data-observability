@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, X } from "lucide-react"
+import { useTagColors, TagBadges } from "@/components/tag-colors"
 import { IncidentDetail } from "@/components/incident-detail"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
@@ -12,6 +13,8 @@ interface Incident {
   checkType: string
   targetTable: string
   groupValue: string | null
+  groupName: string | null
+  tags: string[]
   severity: string
   status: string
   failureCount: number
@@ -26,6 +29,7 @@ function getPSTToday(): string {
 }
 
 export function OpenIncidents() {
+  const tagColors = useTagColors()
   const [resolving, setResolving] = useState<Incident | null>(null)
   const [viewing, setViewing] = useState<Incident | null>(null)
   const [notes, setNotes] = useState("")
@@ -33,6 +37,7 @@ export function OpenIncidents() {
   const [checkFilter, setCheckFilter] = useState("")
   const [targetFilter, setTargetFilter] = useState("")
   const [groupFilter, setGroupFilter] = useState("")
+  const [tagFilter, setTagFilter] = useState("")
   const today = getPSTToday()
   const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
   const [dateStart, setDateStart] = useState(sixtyDaysAgo)
@@ -68,12 +73,14 @@ export function OpenIncidents() {
   const allIncidents = data || []
   const severities = [...new Set(allIncidents.map((i) => i.severity))].sort()
   const checkTypes = [...new Set(allIncidents.map((i) => i.checkType))].sort()
+  const allTags = [...new Set(allIncidents.flatMap((i) => i.tags))].sort()
 
   const incidents = allIncidents.filter((i) => {
     if (severityFilter && i.severity !== severityFilter) return false
     if (checkFilter && i.checkType !== checkFilter) return false
     if (targetFilter && !i.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
-    if (groupFilter && !(i.groupValue || "").toLowerCase().includes(groupFilter.toLowerCase())) return false
+    if (groupFilter && !(i.groupValue || "").toLowerCase().includes(groupFilter.toLowerCase()) && !(i.groupName || "").toLowerCase().includes(groupFilter.toLowerCase())) return false
+    if (tagFilter && !i.tags.includes(tagFilter)) return false
     if (dateStart && i.lastSeen && i.lastSeen.slice(0, 10) < dateStart) return false
     if (dateEnd && i.lastSeen && i.lastSeen.slice(0, 10) > dateEnd) return false
     return true
@@ -99,9 +106,18 @@ export function OpenIncidents() {
     {
       key: "groupValue",
       label: "Group",
-      className: "text-muted-foreground text-xs",
+      className: "text-xs",
       hideOnMobile: true,
-      render: (val) => val || "—",
+      render: (val, row) => val ? (
+        <span>{(row as any).groupName ? <><span className="font-medium text-foreground">{(row as any).groupName}</span>{" "}<span className="text-muted-foreground">({val})</span></> : val}</span>
+      ) : "—",
+    },
+    {
+      key: "tags",
+      label: "Tags",
+      className: "text-xs",
+      hideOnMobile: true,
+      render: (_, row) => <TagBadges tags={(row as any).tags || []} colorMap={tagColors} />,
     },
     {
       key: "failureCount",
@@ -173,6 +189,14 @@ export function OpenIncidents() {
           placeholder="Search group..."
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-36"
         />
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+        >
+          <option value="">All Tags</option>
+          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
         <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
           <span>From</span>
           <input
