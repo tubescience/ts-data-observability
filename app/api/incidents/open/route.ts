@@ -20,7 +20,7 @@ export async function GET() {
       ), client_check_types AS (
         SELECT check_type FROM VALUES ('SPEND_CLIENT'), ('SRC_SPEND_CLIENT') AS t(check_type)
       ), account_check_types AS (
-        SELECT check_type FROM VALUES ('SPEND_ACCOUNT'), ('SRC_SPEND_ACCOUNT'), ('SUM_VALUE_GROUPED') AS t(check_type)
+        SELECT check_type FROM VALUES ('SPEND_ACCOUNT'), ('SRC_SPEND_ACCOUNT'), ('SUM_VALUE_GROUPED'), ('DATA_RECENCY') AS t(check_type)
       ), names AS (
         SELECT c.id, c.name, ct.check_type FROM client_names c CROSS JOIN client_check_types ct
         UNION ALL

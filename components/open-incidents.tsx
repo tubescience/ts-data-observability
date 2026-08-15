@@ -27,8 +27,8 @@ interface Incident {
   lastSeen: string | null
 }
 
-function getPSTToday(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+function getPSTDateOffset(days: number): string {
+  return new Date(Date.now() + days * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
 }
 
 export function OpenIncidents() {
@@ -43,9 +43,10 @@ export function OpenIncidents() {
   const [targetFilter, setTargetFilter] = useState("")
   const [groupFilter, setGroupFilter] = useState("")
   const [tagFilter, setTagFilter] = useState("")
-  const today = getPSTToday()
-  const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
-  const [dateStart, setDateStart] = useState(sixtyDaysAgo)
+  const today = getPSTDateOffset(0)
+  const yesterday = getPSTDateOffset(-1)
+  const thirtyDaysAgo = getPSTDateOffset(-30)
+  const [dateStart, setDateStart] = useState(today)
   const [dateEnd, setDateEnd] = useState(today)
   const queryClient = useQueryClient()
 
@@ -80,16 +81,27 @@ export function OpenIncidents() {
   const checkTypes = [...new Set(allIncidents.map((i) => i.checkType))].sort()
   const allTags = [...new Set(allIncidents.flatMap((i) => i.tags))].sort()
 
-  const incidents = allIncidents.filter((i) => {
+  const matchesNonDateFilters = (i: Incident) => {
     if (severityFilter && i.severity !== severityFilter) return false
     if (checkFilter && i.checkType !== checkFilter) return false
     if (targetFilter && !i.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
     if (groupFilter && !(i.groupValue || "").toLowerCase().includes(groupFilter.toLowerCase()) && !(i.groupName || "").toLowerCase().includes(groupFilter.toLowerCase())) return false
     if (tagFilter && !i.tags.includes(tagFilter)) return false
+    return true
+  }
+
+  const incidents = allIncidents.filter((i) => {
+    if (!matchesNonDateFilters(i)) return false
     if (dateStart && i.lastSeen && i.lastSeen.slice(0, 10) < dateStart) return false
     if (dateEnd && i.lastSeen && i.lastSeen.slice(0, 10) > dateEnd) return false
     return true
   })
+
+  const incidentsIgnoringDate = allIncidents.filter(matchesNonDateFilters)
+  const todayCount = incidentsIgnoringDate.filter((i) => i.lastSeen && i.lastSeen.slice(0, 10) === today).length
+  const previousDaysCount = incidentsIgnoringDate.length - todayCount
+  const isTodayFilter = dateStart === today && dateEnd === today
+  const isPreviousDaysFilter = dateStart === thirtyDaysAgo && dateEnd === yesterday
 
   const columns: TableColumn[] = [
     {
@@ -186,6 +198,22 @@ export function OpenIncidents() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl sm:text-2xl font-semibold">Open Incidents ({incidents.length})</h2>
+      </div>
+
+      <div className="flex items-center gap-3 text-sm">
+        <button
+          onClick={() => { setDateStart(today); setDateEnd(today) }}
+          className={`hover:underline transition-colors ${isTodayFilter ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {todayCount} Today
+        </button>
+        <span className="text-muted-foreground">·</span>
+        <button
+          onClick={() => { setDateStart(thirtyDaysAgo); setDateEnd(yesterday) }}
+          className={`hover:underline transition-colors ${isPreviousDaysFilter ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {previousDaysCount} Previous Days
+        </button>
       </div>
 
       {/* Responsive filters */}

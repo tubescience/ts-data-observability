@@ -57,7 +57,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [showMonitor, setShowMonitor] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
 
-  // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED
+  // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED / DATA_RECENCY
   const { data: groupNameData } = useQuery<{ name: string | null }>({
     queryKey: ["group-name", incident.checkType, incident.groupValue],
     queryFn: () => fetch(`/api/incidents/group-name?checkType=${incident.checkType}&groupValue=${incident.groupValue || ""}`).then((r) => r.json()),
@@ -66,7 +66,8 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
         incident.checkType === "SPEND_ACCOUNT" ||
         incident.checkType === "SRC_SPEND_CLIENT" ||
         incident.checkType === "SRC_SPEND_ACCOUNT" ||
-        incident.checkType === "SUM_VALUE_GROUPED") &&
+        incident.checkType === "SUM_VALUE_GROUPED" ||
+        incident.checkType === "DATA_RECENCY") &&
       !!incident.groupValue,
   })
   const groupName = groupNameData?.name
