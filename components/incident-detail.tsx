@@ -2,9 +2,11 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check } from "lucide-react"
+import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
+import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SeverityBadge } from "@/components/severity-badge"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 
 interface HistoryPoint {
@@ -24,6 +26,7 @@ interface Incident {
   targetTable: string
   groupValue: string | null
   groupName: string | null
+  monitorId: number | null
   tags: string[]
   severity: string
   status: string
@@ -51,13 +54,20 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [showLineageGraph, setShowLineageGraph] = useState(false)
+  const [showMonitor, setShowMonitor] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
 
-  // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT
+  // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED
   const { data: groupNameData } = useQuery<{ name: string | null }>({
     queryKey: ["group-name", incident.checkType, incident.groupValue],
     queryFn: () => fetch(`/api/incidents/group-name?checkType=${incident.checkType}&groupValue=${incident.groupValue || ""}`).then((r) => r.json()),
-    enabled: (incident.checkType === "SPEND_CLIENT" || incident.checkType === "SPEND_ACCOUNT") && !!incident.groupValue,
+    enabled:
+      (incident.checkType === "SPEND_CLIENT" ||
+        incident.checkType === "SPEND_ACCOUNT" ||
+        incident.checkType === "SRC_SPEND_CLIENT" ||
+        incident.checkType === "SRC_SPEND_ACCOUNT" ||
+        incident.checkType === "SUM_VALUE_GROUPED") &&
+      !!incident.groupValue,
   })
   const groupName = groupNameData?.name
 
@@ -88,13 +98,6 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   }, [results])
 
   const latestThreshold = results.length > 0 ? results[results.length - 1]?.threshold : null
-
-  const severityColors: Record<string, string> = {
-    CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    HIGH: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-    MEDIUM: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    LOW: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
@@ -139,9 +142,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           <div>
             <span className="text-muted-foreground text-xs">Severity</span>
             <p className="mt-0.5">
-              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${severityColors[incident.severity] || "bg-gray-100 text-gray-800"}`}>
-                {incident.severity}
-              </span>
+              <SeverityBadge severity={incident.severity} />
             </p>
           </div>
           <div>
@@ -275,6 +276,16 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             View Lineage
           </button>
 
+          {incident.monitorId != null && (
+            <button
+              onClick={() => setShowMonitor(true)}
+              className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-border rounded-md hover:bg-accent transition-colors"
+            >
+              <Radar className="w-4 h-4" />
+              View Monitor
+            </button>
+          )}
+
           <button
             onClick={() => onResolve(incident)}
             className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
@@ -287,6 +298,13 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           <LineageGraphPopup
             target={incident.targetTable}
             onClose={() => setShowLineageGraph(false)}
+          />
+        )}
+
+        {showMonitor && incident.monitorId != null && (
+          <MonitorDetailPopup
+            monitorId={incident.monitorId}
+            onClose={() => setShowMonitor(false)}
           />
         )}
       </div>

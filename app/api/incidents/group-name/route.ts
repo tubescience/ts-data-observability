@@ -11,12 +11,12 @@ export async function GET(request: NextRequest) {
   try {
     let name: string | null = null
 
-    if (checkType === "SPEND_CLIENT") {
+    if (checkType === "SPEND_CLIENT" || checkType === "SRC_SPEND_CLIENT") {
       const rows = await querySnowflake(
         `SELECT client_name FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE client_id = '${groupValue.replace(/'/g, "''")}' LIMIT 1`
       )
       name = rows[0]?.CLIENT_NAME || null
-    } else if (checkType === "SPEND_ACCOUNT") {
+    } else if (checkType === "SPEND_ACCOUNT" || checkType === "SRC_SPEND_ACCOUNT" || checkType === "SUM_VALUE_GROUPED") {
       const rows = await querySnowflake(
         `SELECT account_name FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE account_id = '${groupValue.replace(/'/g, "''")}' LIMIT 1`
       )

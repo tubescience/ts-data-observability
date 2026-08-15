@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { CheckCircle, XCircle, ChevronDown, ChevronRight, BarChart3, Copy, Check } from "lucide-react"
 import { MonitorHistory } from "@/components/monitor-history"
 import { useTagColors, TagBadge } from "@/components/tag-colors"
+import { SeverityBadge } from "@/components/severity-badge"
 
 function formatPST(iso: string | null): string {
   if (!iso) return "—"
@@ -133,11 +134,14 @@ export function MonitorsView() {
       </div>
 
       <div className="space-y-3">
-        {monitors.map((m) => (
-          <div key={m.monitorId} className="border border-border rounded-lg overflow-hidden">
-            <button
+        {monitors.map((m, i) => (
+          <div key={`${m.monitorId}-${i}`} className="border border-border rounded-lg overflow-hidden">
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => toggle(m.monitorId)}
-              className="w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-muted/30 transition-colors text-left"
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(m.monitorId) } }}
+              className="w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-muted/30 transition-colors text-left cursor-pointer"
             >
               {expanded.has(m.monitorId) ? (
                 <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -178,7 +182,7 @@ export function MonitorsView() {
               <div className="text-xs text-muted-foreground shrink-0 hidden md:block">
                 {m.lastRun ? formatPST(m.lastRun) : "—"}
               </div>
-            </button>
+            </div>
 
             {expanded.has(m.monitorId) && (
               <div className="border-t border-border bg-muted/20 px-3 sm:px-4 py-3 space-y-3">
@@ -224,7 +228,7 @@ export function MonitorsView() {
                               </td>
                               <td className="px-2 py-1.5 font-mono">{c.checkType}</td>
                               <td className="px-2 py-1.5">
-                                <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${severityColor(c.severity)}`}>{c.severity}</span>
+                                <SeverityBadge severity={c.severity} />
                               </td>
                               <td className="px-2 py-1.5">
                                 {c.thresholdPct != null && `${c.thresholdPct}%`}
@@ -248,7 +252,7 @@ export function MonitorsView() {
                             {c.enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${severityColor(c.severity)}`}>{c.severity}</span>
+                            <SeverityBadge severity={c.severity} />
                             <span className="text-muted-foreground">
                               {c.thresholdPct != null ? `${c.thresholdPct}%` : c.thresholdValue != null ? c.thresholdValue : "—"}
                             </span>
@@ -274,14 +278,4 @@ export function MonitorsView() {
       )}
     </div>
   )
-}
-
-function severityColor(severity: string): string {
-  const colors: Record<string, string> = {
-    CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    HIGH: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-    MEDIUM: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    LOW: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  }
-  return colors[severity] || "bg-gray-100 text-gray-800"
 }

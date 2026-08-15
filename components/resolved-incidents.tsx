@@ -2,7 +2,10 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Radar } from "lucide-react"
 import { ResolvedIncidentDetail } from "@/components/resolved-incident-detail"
+import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SeverityBadge } from "@/components/severity-badge"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 import { useTagColors, TagBadges } from "@/components/tag-colors"
 
@@ -12,6 +15,7 @@ interface ResolvedIncident {
   checkType: string
   targetTable: string
   groupValue: string | null
+  monitorId: number | null
   tags: string[]
   severity: string
   failureCount: number
@@ -35,6 +39,7 @@ export function ResolvedIncidents() {
   const [targetFilter, setTargetFilter] = useState("")
   const [tagFilter, setTagFilter] = useState("")
   const [viewing, setViewing] = useState<ResolvedIncident | null>(null)
+  const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
 
   const { data, isLoading, error } = useQuery<ResolvedIncident[]>({
     queryKey: ["incidents-resolved", dateStart, dateEnd],
@@ -58,11 +63,7 @@ export function ResolvedIncidents() {
     {
       key: "severity",
       label: "Severity",
-      render: (_, row) => (
-        <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${severityColor(row.severity)}`}>
-          {row.severity}
-        </span>
-      ),
+      render: (_, row) => <SeverityBadge severity={row.severity} />,
     },
     { key: "checkType", label: "Check Type", className: "font-mono text-xs" },
     {
@@ -90,6 +91,20 @@ export function ResolvedIncidents() {
       className: "text-xs max-w-[250px] truncate",
       hideOnMobile: true,
       render: (val) => val || "—",
+    },
+    {
+      key: "action",
+      label: "Action",
+      render: (_, row) =>
+        (row as any).monitorId != null ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setViewingMonitorId((row as any).monitorId) }}
+            className="p-1.5 text-muted-foreground hover:text-foreground border border-border rounded hover:bg-accent transition-colors min-h-[32px]"
+            title="View Monitor"
+          >
+            <Radar className="w-3.5 h-3.5" />
+          </button>
+        ) : null,
     },
   ]
 
@@ -166,18 +181,15 @@ export function ResolvedIncidents() {
           onClose={() => setViewing(null)}
         />
       )}
+
+      {viewingMonitorId != null && (
+        <MonitorDetailPopup
+          monitorId={viewingMonitorId}
+          onClose={() => setViewingMonitorId(null)}
+        />
+      )}
     </div>
   )
-}
-
-function severityColor(severity: string): string {
-  const colors: Record<string, string> = {
-    CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    HIGH: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-    MEDIUM: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    LOW: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  }
-  return colors[severity] || "bg-gray-100 text-gray-800"
 }
 
 function formatPST(iso: string | null): string {

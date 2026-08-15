@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const rows = await querySnowflake(`
       SELECT
         i.INCIDENT_ID, i.INCIDENT_KEY, i.CHECK_TYPE, i.TARGET_TABLE,
-        i.GROUP_VALUE, i.SEVERITY, i.FAILURE_COUNT, i.RESOLUTION_NOTES,
+        i.GROUP_VALUE, i.SEVERITY, i.FAILURE_COUNT, i.RESOLUTION_NOTES, i.MONITOR_ID,
         CONVERT_TIMEZONE('America/Los_Angeles', i.FIRST_SEEN) as FIRST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.LAST_SEEN) as LAST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.RESOLVED_AT) as RESOLVED_AT_PST,
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
       checkType: r.CHECK_TYPE,
       targetTable: r.TARGET_TABLE,
       groupValue: r.GROUP_VALUE,
+      monitorId: r.MONITOR_ID ?? null,
       severity: r.SEVERITY,
       failureCount: r.FAILURE_COUNT,
       resolutionNotes: r.RESOLUTION_NOTES,

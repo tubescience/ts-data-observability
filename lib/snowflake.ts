@@ -115,9 +115,20 @@ function getOrCreateConnection(): Promise<any> {
   return connPromise
 }
 
+function isStaleConnectionError(err: any): boolean {
+  const message = err?.message || ""
+  return (
+    /not connected/i.test(message) ||
+    /terminated connection/i.test(message) ||
+    /connection is up but not authenticated/i.test(message) ||
+    err?.code === "410001"
+  )
+}
+
 export async function querySnowflake(
   query: string,
-  options: QueryOptions = {}
+  options: QueryOptions = {},
+  allowRetry = true
 ): Promise<Record<string, any>[]> {
   let conn: any
   try {
@@ -128,25 +139,26 @@ export async function querySnowflake(
     conn = await getOrCreateConnection()
   }
 
-  return new Promise((resolve, reject) => {
-    const execOpts: any = { sqlText: query }
-    if (options.warehouse) {
-      execOpts.parameters = { QUERY_WAREHOUSE_NAME: options.warehouse }
-    }
+  try {
+    return await new Promise((resolve, reject) => {
+      const execOpts: any = { sqlText: query }
+      if (options.warehouse) {
+        execOpts.parameters = { QUERY_WAREHOUSE_NAME: options.warehouse }
+      }
 
-    conn.execute({
-      ...execOpts,
-      complete: (err: any, _stmt: any, rows: any) => {
-        if (err) {
-          // If connection dropped, clear cache for next attempt
-          if (err.message?.includes("not connected") || err.code === "410001") {
-            cachedConn = null; connReady = false; connPromise = null
-          }
-          reject(new Error(`Query failed: ${err.message}`))
-        } else {
-          resolve((rows ?? []) as Record<string, any>[])
-        }
-      },
+      conn.execute({
+        ...execOpts,
+        complete: (err: any, _stmt: any, rows: any) => {
+          if (err) reject(err)
+          else resolve((rows ?? []) as Record<string, any>[])
+        },
+      })
     })
-  })
+  } catch (err: any) {
+    if (isStaleConnectionError(err)) {
+      cachedConn = null; connReady = false; connPromise = null
+      if (allowRetry) return querySnowflake(query, options, false)
+    }
+    throw new Error(`Query failed: ${err.message}`)
+  }
 }

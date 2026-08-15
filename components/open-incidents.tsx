@@ -2,9 +2,11 @@
 
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, X } from "lucide-react"
+import { X, Radar, Copy, Check } from "lucide-react"
 import { useTagColors, TagBadges } from "@/components/tag-colors"
 import { IncidentDetail } from "@/components/incident-detail"
+import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SeverityBadge } from "@/components/severity-badge"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface Incident {
@@ -14,6 +16,7 @@ interface Incident {
   targetTable: string
   groupValue: string | null
   groupName: string | null
+  monitorId: number | null
   tags: string[]
   severity: string
   status: string
@@ -32,6 +35,8 @@ export function OpenIncidents() {
   const tagColors = useTagColors()
   const [resolving, setResolving] = useState<Incident | null>(null)
   const [viewing, setViewing] = useState<Incident | null>(null)
+  const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
+  const [copiedId, setCopiedId] = useState<number | null>(null)
   const [notes, setNotes] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
   const [checkFilter, setCheckFilter] = useState("")
@@ -88,6 +93,21 @@ export function OpenIncidents() {
 
   const columns: TableColumn[] = [
     {
+      key: "incidentId",
+      label: "ID",
+      className: "text-xs font-mono",
+      render: (val) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(String(val)); setCopiedId(val); setTimeout(() => setCopiedId(null), 1500) }}
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+          title="Copy Incident ID"
+        >
+          <span>#{val}</span>
+          {copiedId === val ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+        </button>
+      ),
+    },
+    {
       key: "severity",
       label: "Severity",
       render: (_, row) => <SeverityBadge severity={row.severity} />,
@@ -141,12 +161,23 @@ export function OpenIncidents() {
       key: "action",
       label: "Action",
       render: (_, row) => (
-        <button
-          onClick={(e) => { e.stopPropagation(); setResolving(row) }}
-          className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors min-h-[32px]"
-        >
-          Resolve
-        </button>
+        <div className="flex items-center gap-1.5">
+          {(row as any).monitorId != null && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setViewingMonitorId((row as any).monitorId) }}
+              className="p-1.5 text-muted-foreground hover:text-foreground border border-border rounded hover:bg-accent transition-colors min-h-[32px]"
+              title="View Monitor"
+            >
+              <Radar className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); setResolving(row) }}
+            className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors min-h-[32px]"
+          >
+            Resolve
+          </button>
+        </div>
       ),
     },
   ]
@@ -231,6 +262,13 @@ export function OpenIncidents() {
         />
       )}
 
+      {viewingMonitorId != null && (
+        <MonitorDetailPopup
+          monitorId={viewingMonitorId}
+          onClose={() => setViewingMonitorId(null)}
+        />
+      )}
+
       {resolving && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-2xl sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -275,21 +313,6 @@ export function OpenIncidents() {
         </div>
       )}
     </div>
-  )
-}
-
-function SeverityBadge({ severity }: { severity: string }) {
-  const colors: Record<string, string> = {
-    CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    HIGH: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-    MEDIUM: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    LOW: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  }
-  return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${colors[severity] || "bg-gray-100 text-gray-800"}`}>
-      {severity === "CRITICAL" && <AlertTriangle className="w-3 h-3" />}
-      {severity}
-    </span>
   )
 }
 

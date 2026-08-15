@@ -11,17 +11,25 @@ export async function GET() {
   try {
     await querySnowflake("USE ROLE MCP_MONITOR")
     const rows = await querySnowflake(`
-      WITH names AS (
-        SELECT DISTINCT client_id::VARCHAR AS id, client_name AS name, 'SPEND_CLIENT' AS check_type
+      WITH client_names AS (
+        SELECT DISTINCT client_id::VARCHAR AS id, client_name AS name
         FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE client_id IS NOT NULL AND client_name IS NOT NULL
-        UNION ALL
-        SELECT DISTINCT account_id::VARCHAR, account_name, 'SPEND_ACCOUNT'
+      ), account_names AS (
+        SELECT DISTINCT account_id::VARCHAR AS id, account_name AS name
         FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE account_id IS NOT NULL AND account_name IS NOT NULL
+      ), client_check_types AS (
+        SELECT check_type FROM VALUES ('SPEND_CLIENT'), ('SRC_SPEND_CLIENT') AS t(check_type)
+      ), account_check_types AS (
+        SELECT check_type FROM VALUES ('SPEND_ACCOUNT'), ('SRC_SPEND_ACCOUNT'), ('SUM_VALUE_GROUPED') AS t(check_type)
+      ), names AS (
+        SELECT c.id, c.name, ct.check_type FROM client_names c CROSS JOIN client_check_types ct
+        UNION ALL
+        SELECT a.id, a.name, ct.check_type FROM account_names a CROSS JOIN account_check_types ct
       )
       SELECT
         i.INCIDENT_ID, i.INCIDENT_KEY, i.CHECK_TYPE, i.TARGET_TABLE,
         i.GROUP_VALUE, i.SEVERITY, i.STATUS, i.FAILURE_COUNT,
-        i.LAST_METRIC, i.LAST_THRESHOLD,
+        i.LAST_METRIC, i.LAST_THRESHOLD, i.MONITOR_ID,
         CONVERT_TIMEZONE('America/Los_Angeles', i.FIRST_SEEN) as FIRST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.LAST_SEEN) as LAST_SEEN_PST,
         n.name AS GROUP_NAME,
@@ -42,6 +50,7 @@ export async function GET() {
       targetTable: r.TARGET_TABLE,
       groupValue: r.GROUP_VALUE,
       groupName: r.GROUP_NAME || null,
+      monitorId: r.MONITOR_ID ?? null,
       severity: r.SEVERITY,
       status: r.STATUS,
       failureCount: r.FAILURE_COUNT,

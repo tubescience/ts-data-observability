@@ -1,5 +1,6 @@
 node_modules
 .next
+.env
 .env.local
 .env*.local
 .snowflake-key.p8
@@ -8,3 +9,4 @@ node_modules
 .DS_Store
 .vercel
 snowflake-key.p8
+*.log
