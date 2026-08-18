@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       SELECT
         i.INCIDENT_ID, i.INCIDENT_KEY, i.CHECK_TYPE, i.TARGET_TABLE,
         i.GROUP_VALUE, i.SEVERITY, i.FAILURE_COUNT, i.RESOLUTION_NOTES, i.MONITOR_ID,
+        i.SUGGESTED_RESOLUTION, i.SUGGESTED_RESOLUTION_REASON,
         CONVERT_TIMEZONE('America/Los_Angeles', i.FIRST_SEEN) as FIRST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.LAST_SEEN) as LAST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.RESOLVED_AT) as RESOLVED_AT_PST,
@@ -41,6 +42,8 @@ export async function GET(request: NextRequest) {
       severity: r.SEVERITY,
       failureCount: r.FAILURE_COUNT,
       resolutionNotes: r.RESOLUTION_NOTES,
+      suggestedResolution: r.SUGGESTED_RESOLUTION || null,
+      suggestedResolutionReason: r.SUGGESTED_RESOLUTION_REASON || null,
       firstSeen: toIso(r.FIRST_SEEN_PST),
       lastSeen: toIso(r.LAST_SEEN_PST),
       resolvedAt: toIso(r.RESOLVED_AT_PST),

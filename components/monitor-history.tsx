@@ -13,6 +13,7 @@ interface HistoryResult {
   metricValue: number | null
   threshold: number | null
   groupValue: string | null
+  groupName: string | null
   checkDate: string | null
   checkTimestamp: string | null
 }
@@ -48,27 +49,43 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
       fetch(`/api/monitors/history?monitorId=${monitorId}&dateStart=${dateStart}&dateEnd=${dateEnd}`).then((r) => r.json()),
   })
 
+  function matchesGroup(r: HistoryResult, group: string): boolean {
+    if (!group) return true
+    const parts = r.targetTable.split('.')
+    const tableName = parts[parts.length - 1]?.replace(/"/g, '') || ''
+    return r.groupValue === group || tableName === group
+  }
+
   const allResults = data || []
-  const checkTypes = useMemo(() => [...new Set(allResults.map((r) => r.checkType))].sort(), [allResults])
+
+  // Cascading facets: each dropdown's options are scoped to the OTHER active
+  // filter, and the currently selected value is always kept present even if
+  // it would otherwise be narrowed out — it'll just yield 0 results.
+  const checkTypes = useMemo(() => {
+    const values = new Set(allResults.filter((r) => matchesGroup(r, selectedGroup)).map((r) => r.checkType))
+    if (selectedCheck) values.add(selectedCheck)
+    return [...values].sort()
+  }, [allResults, selectedGroup, selectedCheck])
+
   const groupValues = useMemo(() => {
-    const vals = new Set<string>()
-    for (const r of allResults) {
-      if (r.groupValue) vals.add(r.groupValue)
+    const scoped = allResults.filter((r) => !selectedCheck || r.checkType === selectedCheck)
+    const labels = new Map<string, string>()
+    for (const r of scoped) {
+      if (r.groupValue && !labels.has(r.groupValue)) {
+        labels.set(r.groupValue, r.groupName ? `${r.groupName} (${r.groupValue})` : r.groupValue)
+      }
       // Extract short table name from full path for filtering
       const parts = r.targetTable.split('.')
       const tableName = parts[parts.length - 1]?.replace(/"/g, '')
-      if (tableName) vals.add(tableName)
+      if (tableName && !labels.has(tableName)) labels.set(tableName, tableName)
     }
-    return [...vals].sort()
-  }, [allResults])
+    if (selectedGroup && !labels.has(selectedGroup)) labels.set(selectedGroup, selectedGroup)
+    return [...labels.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }))
+  }, [allResults, selectedCheck, selectedGroup])
 
   const filteredResults = allResults.filter((r) => {
     if (selectedCheck && r.checkType !== selectedCheck) return false
-    if (selectedGroup) {
-      const parts = r.targetTable.split('.')
-      const tableName = parts[parts.length - 1]?.replace(/"/g, '') || ''
-      if (r.groupValue !== selectedGroup && tableName !== selectedGroup) return false
-    }
+    if (!matchesGroup(r, selectedGroup)) return false
     return true
   })
 
@@ -165,7 +182,7 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
               className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="">All Groups / Tables</option>
-              {groupValues.map((g) => <option key={g} value={g}>{g}</option>)}
+              {groupValues.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
             </select>
             <div className="sm:ml-auto flex gap-3 text-sm">
               <span className="text-green-600 font-medium">{passCount} passed</span>
@@ -233,7 +250,9 @@ export function MonitorHistory({ monitorId, monitorName, targetTable, onClose }:
                       <tr key={i} className="hover:bg-muted/30">
                         <td className="px-3 py-2 text-xs">{r.checkDate}</td>
                         <td className="px-3 py-2 font-mono text-xs">{r.checkType}</td>
-                        <td className="px-3 py-2 text-xs text-muted-foreground">{r.groupValue || "—"}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">
+                          {r.groupValue ? (r.groupName ? <><span className="font-medium text-foreground">{r.groupName}</span> ({r.groupValue})</> : r.groupValue) : "—"}
+                        </td>
                         <td className="px-3 py-2">
                           <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
                             r.status === "PASS"

@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar } from "lucide-react"
+import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/suggested-resolution-popup"
 import { SeverityBadge } from "@/components/severity-badge"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 
@@ -33,6 +34,8 @@ interface Incident {
   failureCount: number
   lastMetric: number | null
   lastThreshold: number | null
+  suggestedResolution: string | null
+  suggestedResolutionReason: string | null
   firstSeen: string | null
   lastSeen: string | null
 }
@@ -40,7 +43,7 @@ interface Incident {
 interface IncidentDetailProps {
   incident: Incident
   onClose: () => void
-  onResolve: (incident: Incident) => void
+  onResolve: (incident: Incident, prefillNotes?: string) => void
 }
 
 function getDefaultDates() {
@@ -55,6 +58,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [showLineageGraph, setShowLineageGraph] = useState(false)
   const [showMonitor, setShowMonitor] = useState(false)
+  const [showSuggestion, setShowSuggestion] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
 
   // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED / DATA_RECENCY
@@ -288,6 +292,16 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           )}
 
           <button
+            onClick={() => setShowSuggestion(true)}
+            className={`px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-border rounded-md hover:bg-accent transition-colors ${
+              incident.suggestedResolution ? "text-amber-500" : "text-muted-foreground/40"
+            }`}
+          >
+            <Lightbulb className="w-4 h-4" />
+            Suggested Resolution
+          </button>
+
+          <button
             onClick={() => onResolve(incident)}
             className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
           >
@@ -306,6 +320,18 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           <MonitorDetailPopup
             monitorId={incident.monitorId}
             onClose={() => setShowMonitor(false)}
+          />
+        )}
+
+        {showSuggestion && (
+          <SuggestedResolutionPopup
+            resolution={incident.suggestedResolution}
+            reason={incident.suggestedResolutionReason}
+            onClose={() => setShowSuggestion(false)}
+            onUseInResolve={() => {
+              setShowSuggestion(false)
+              onResolve(incident, buildSuggestionMessage(incident.suggestedResolution, incident.suggestedResolutionReason))
+            }}
           />
         )}
       </div>

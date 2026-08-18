@@ -10,14 +10,9 @@ function toIso(val: unknown): string | null {
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const monitorId = searchParams.get("monitorId")
-    const dateStart = searchParams.get("dateStart") || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-    const dateEnd = searchParams.get("dateEnd") || new Date().toISOString().slice(0, 10)
-
-    if (!monitorId) {
-      return Response.json({ error: "monitorId is required" }, { status: 400 })
-    }
+    const sp = request.nextUrl.searchParams
+    const dateStart = sp.get("dateStart") || new Date().toISOString().slice(0, 10)
+    const dateEnd = sp.get("dateEnd") || dateStart
 
     await querySnowflake("USE ROLE MCP_MONITOR")
     const rows = await querySnowflake(`
@@ -37,41 +32,38 @@ export async function GET(request: NextRequest) {
         SELECT a.id, a.name, ct.check_type FROM account_names a CROSS JOIN account_check_types ct
       )
       SELECT
-        r.CHECK_TYPE,
-        r.TARGET_TABLE,
-        r.STATUS,
-        r.METRIC_VALUE,
-        r.THRESHOLD,
-        r.GROUP_VALUE,
-        n.name AS GROUP_NAME,
-        CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE as CHECK_DATE,
-        CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST
+        r.RESULT_ID, r.CHECK_TYPE, r.TARGET_TABLE, r.GROUP_VALUE, r.SEVERITY,
+        r.METRIC_VALUE, r.THRESHOLD, r.DETAILS, c.MONITOR_ID,
+        CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST,
+        n.name AS GROUP_NAME
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS r
       JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG c ON r.CONFIG_ID = c.CONFIG_ID
       LEFT JOIN names n ON n.id = r.GROUP_VALUE::VARCHAR AND n.check_type = r.CHECK_TYPE
-      WHERE c.MONITOR_ID = ${Number(monitorId)}
+      WHERE r.STATUS = 'ANOMALY'
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE >= '${dateStart}'
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE <= '${dateEnd}'
-      ORDER BY r.CHECK_TIMESTAMP ASC
+      ORDER BY r.CHECK_TIMESTAMP DESC
     `)
 
-    const results = rows.map((r) => ({
+    const anomalies = rows.map((r) => ({
+      resultId: r.RESULT_ID,
       checkType: r.CHECK_TYPE,
       targetTable: r.TARGET_TABLE,
-      status: r.STATUS,
-      metricValue: r.METRIC_VALUE,
-      threshold: r.THRESHOLD,
       groupValue: r.GROUP_VALUE,
       groupName: r.GROUP_NAME || null,
-      checkDate: toIso(r.CHECK_DATE)?.slice(0, 10) ?? null,
+      severity: r.SEVERITY,
+      metricValue: r.METRIC_VALUE,
+      threshold: r.THRESHOLD,
+      details: r.DETAILS,
+      monitorId: r.MONITOR_ID ?? null,
       checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
     }))
 
-    return Response.json(results)
+    return Response.json(anomalies)
   } catch (e) {
-    console.error(new Date().toISOString(), "[monitors/history]", e)
+    console.error(new Date().toISOString(), "[anomalies]", e)
     return Response.json(
-      { error: e instanceof Error ? e.message : "Failed to load monitor history" },
+      { error: e instanceof Error ? e.message : "Failed to load anomalies" },
       { status: 500 }
     )
   }

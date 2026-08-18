@@ -1,12 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { DashboardView } from "@/components/dashboard-view"
 import { OpenIncidents } from "@/components/open-incidents"
 import { ResolvedIncidents } from "@/components/resolved-incidents"
+import { AnomaliesView } from "@/components/anomalies-view"
 import { MonitorsView } from "@/components/monitors-view"
 import { TrendsView } from "@/components/trends-view"
-import { SpendView } from "@/components/spend-view"
 import { CreditsView } from "@/components/credits-view"
 import { TasksView } from "@/components/tasks-view"
 import { LineageView } from "@/components/lineage-view"
@@ -18,9 +19,9 @@ const tabs = [
   { id: "dashboard", label: "Dashboard" },
   { id: "open-incidents", label: "Open Incidents" },
   { id: "resolved", label: "Resolved" },
+  { id: "anomalies", label: "Anomalies" },
   { id: "monitors", label: "Monitors" },
   { id: "trends", label: "Trends" },
-  { id: "spend", label: "Spend & Revenue" },
   { id: "credits", label: "Credits" },
   { id: "tasks", label: "Tasks" },
   { id: "lineage", label: "Lineage" },
@@ -30,7 +31,10 @@ const tabs = [
 type TabId = (typeof tabs)[number]["id"]
 
 export function AppShell() {
-  const [activeTab, setActiveTab] = useState<TabId>("dashboard")
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get("tab")
+  const initialTab = (tabs.find((t) => t.id === tabParam)?.id ?? "dashboard") as TabId
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [refreshKey, setRefreshKey] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -95,9 +99,9 @@ export function AppShell() {
         {activeTab === "dashboard" && <DashboardView />}
         {activeTab === "open-incidents" && <OpenIncidents />}
         {activeTab === "resolved" && <ResolvedIncidents />}
+        {activeTab === "anomalies" && <AnomaliesView />}
         {activeTab === "monitors" && <MonitorsView />}
         {activeTab === "trends" && <TrendsView />}
-        {activeTab === "spend" && <SpendView />}
         {activeTab === "credits" && <CreditsView />}
         {activeTab === "tasks" && <TasksView />}
         {activeTab === "lineage" && <LineageView />}

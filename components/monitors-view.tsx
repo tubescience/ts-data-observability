@@ -26,6 +26,8 @@ interface Check {
   nullColumns: string | null
   sumColumn: string | null
   groupByColumn: string | null
+  granularity: string
+  domain: string
 }
 
 interface Monitor {
@@ -40,6 +42,7 @@ interface Monitor {
   scheduleCron: string | null
   warehouse: string | null
   taskName: string | null
+  sourceLayer: string
   tags: string[]
   lastRun: string | null
   createdAt: string | null
@@ -56,29 +59,64 @@ export function MonitorsView() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("")
-  const [checkTypeFilter, setCheckTypeFilter] = useState<string>("")  
   const [nameFilter, setNameFilter] = useState<string>("")
   const [tagFilter, setTagFilter] = useState<string>("")
+  const [sourceLayerFilter, setSourceLayerFilter] = useState<string>("")
+  const [granularityFilter, setGranularityFilter] = useState<string>("")
+  const [domainFilter, setDomainFilter] = useState<string>("")
   const [historyMonitor, setHistoryMonitor] = useState<Monitor | null>(null)
 
   if (isLoading) return <div className="text-muted-foreground">Loading monitors...</div>
   if (error) return <div className="text-destructive">Failed to load monitors</div>
 
   const allMonitors = data || []
-  const allCheckTypes = [...new Set(allMonitors.flatMap((m) => m.checks.map((c) => c.checkType)))].sort()
-  const allTags = [...new Set(allMonitors.flatMap((m) => m.tags || []))].sort()
 
-  const monitors = allMonitors.filter((m) => {
-    if (statusFilter === "enabled" && !m.enabled) return false
-    if (statusFilter === "disabled" && m.enabled) return false
-    if (checkTypeFilter && !m.checks.some((c) => c.checkType === checkTypeFilter)) return false
-    if (tagFilter && !(m.tags || []).includes(tagFilter)) return false
-    if (nameFilter) {
-      const regex = new RegExp(`\\b${nameFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
-      if (!regex.test(m.monitorName) && !regex.test(m.targetTable)) return false
-    }
-    return true
-  })
+  type FilterKey = "status" | "tag" | "sourceLayer" | "granularity" | "domain" | "name"
+  const activeFilters: Record<FilterKey, string> = {
+    status: statusFilter,
+    tag: tagFilter,
+    sourceLayer: sourceLayerFilter,
+    granularity: granularityFilter,
+    domain: domainFilter,
+    name: nameFilter,
+  }
+
+  // Applies every filter except `excludeKey` — used both for the final
+  // displayed list (excludeKey = null) and for computing each dropdown's own
+  // options scoped to the OTHER active filters (cascading facets).
+  function scopedMonitors(excludeKey: FilterKey | null): Monitor[] {
+    return allMonitors.filter((m) => {
+      if (excludeKey !== "status") {
+        if (activeFilters.status === "enabled" && !m.enabled) return false
+        if (activeFilters.status === "disabled" && m.enabled) return false
+      }
+      if (excludeKey !== "tag" && activeFilters.tag && !(m.tags || []).includes(activeFilters.tag)) return false
+      if (excludeKey !== "sourceLayer" && activeFilters.sourceLayer && m.sourceLayer !== activeFilters.sourceLayer) return false
+      if (excludeKey !== "granularity" && activeFilters.granularity && !m.checks.some((c) => c.granularity === activeFilters.granularity)) return false
+      if (excludeKey !== "domain" && activeFilters.domain && !m.checks.some((c) => c.domain === activeFilters.domain)) return false
+      if (excludeKey !== "name" && activeFilters.name) {
+        const regex = new RegExp(`\\b${activeFilters.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+        if (!regex.test(m.monitorName) && !regex.test(m.targetTable)) return false
+      }
+      return true
+    })
+  }
+
+  // Include the currently selected value even if the other active filters
+  // would otherwise exclude it, so a selection never silently vanishes from
+  // its own dropdown — it'll just show 0 monitors if the combination is empty.
+  function optionsFor(excludeKey: FilterKey, current: string, extract: (m: Monitor) => string[]): string[] {
+    const values = new Set(scopedMonitors(excludeKey).flatMap(extract))
+    if (current) values.add(current)
+    return [...values].sort()
+  }
+
+  const allTags = optionsFor("tag", tagFilter, (m) => m.tags || [])
+  const allSourceLayers = optionsFor("sourceLayer", sourceLayerFilter, (m) => [m.sourceLayer])
+  const allGranularities = optionsFor("granularity", granularityFilter, (m) => m.checks.map((c) => c.granularity))
+  const allDomains = optionsFor("domain", domainFilter, (m) => m.checks.map((c) => c.domain))
+
+  const monitors = scopedMonitors(null)
 
   const enabledCount = monitors.filter((m) => m.enabled).length
 
@@ -116,12 +154,28 @@ export function MonitorsView() {
           <option value="disabled">Disabled</option>
         </select>
         <select
-          value={checkTypeFilter}
-          onChange={(e) => setCheckTypeFilter(e.target.value)}
+          value={sourceLayerFilter}
+          onChange={(e) => setSourceLayerFilter(e.target.value)}
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
-          <option value="">All Check Types</option>
-          {allCheckTypes.map((c) => <option key={c} value={c}>{c}</option>)}
+          <option value="">All Source Layers</option>
+          {allSourceLayers.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select
+          value={granularityFilter}
+          onChange={(e) => setGranularityFilter(e.target.value)}
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+        >
+          <option value="">All Granularities</option>
+          {allGranularities.map((g) => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <select
+          value={domainFilter}
+          onChange={(e) => setDomainFilter(e.target.value)}
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
+        >
+          <option value="">All Domains</option>
+          {allDomains.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
         <select
           value={tagFilter}
@@ -193,6 +247,7 @@ export function MonitorsView() {
                     <div><span className="text-muted-foreground">Schedule:</span> {m.scheduleCron || "—"}</div>
                     <div><span className="text-muted-foreground">Last Run:</span> {formatPST(m.lastRun)}</div>
                     <div><span className="text-muted-foreground">Task:</span> {m.taskName || "—"}</div>
+                    <div><span className="text-muted-foreground">Source Layer:</span> {m.sourceLayer}</div>
                   </div>
                   <button
                     onClick={() => setHistoryMonitor(m)}
@@ -215,6 +270,8 @@ export function MonitorsView() {
                           <tr>
                             <th className="text-left px-2 py-1.5 font-medium">Enabled</th>
                             <th className="text-left px-2 py-1.5 font-medium">Check Type</th>
+                            <th className="text-left px-2 py-1.5 font-medium">Domain</th>
+                            <th className="text-left px-2 py-1.5 font-medium">Granularity</th>
                             <th className="text-left px-2 py-1.5 font-medium">Severity</th>
                             <th className="text-left px-2 py-1.5 font-medium">Threshold</th>
                             <th className="text-left px-2 py-1.5 font-medium">Columns</th>
@@ -227,6 +284,8 @@ export function MonitorsView() {
                                 {c.enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
                               </td>
                               <td className="px-2 py-1.5 font-mono">{c.checkType}</td>
+                              <td className="px-2 py-1.5">{c.domain}</td>
+                              <td className="px-2 py-1.5 text-muted-foreground">{c.granularity}</td>
                               <td className="px-2 py-1.5">
                                 <SeverityBadge severity={c.severity} />
                               </td>
@@ -251,6 +310,7 @@ export function MonitorsView() {
                             <span className="font-mono font-medium">{c.checkType}</span>
                             {c.enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-red-500" />}
                           </div>
+                          <div className="text-muted-foreground">{c.domain} · {c.granularity}</div>
                           <div className="flex items-center gap-2">
                             <SeverityBadge severity={c.severity} />
                             <span className="text-muted-foreground">

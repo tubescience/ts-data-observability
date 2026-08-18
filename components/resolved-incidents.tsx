@@ -2,9 +2,10 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Radar } from "lucide-react"
+import { Radar, Lightbulb } from "lucide-react"
 import { ResolvedIncidentDetail } from "@/components/resolved-incident-detail"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SuggestedResolutionPopup } from "@/components/suggested-resolution-popup"
 import { SeverityBadge } from "@/components/severity-badge"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 import { useTagColors, TagBadges } from "@/components/tag-colors"
@@ -20,6 +21,8 @@ interface ResolvedIncident {
   severity: string
   failureCount: number
   resolutionNotes: string | null
+  suggestedResolution: string | null
+  suggestedResolutionReason: string | null
   firstSeen: string | null
   lastSeen: string | null
   resolvedAt: string | null
@@ -40,6 +43,7 @@ export function ResolvedIncidents() {
   const [tagFilter, setTagFilter] = useState("")
   const [viewing, setViewing] = useState<ResolvedIncident | null>(null)
   const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
+  const [viewingSuggestion, setViewingSuggestion] = useState<ResolvedIncident | null>(null)
 
   const { data, isLoading, error } = useQuery<ResolvedIncident[]>({
     queryKey: ["incidents-resolved", dateStart, dateEnd],
@@ -95,16 +99,28 @@ export function ResolvedIncidents() {
     {
       key: "action",
       label: "Action",
-      render: (_, row) =>
-        (row as any).monitorId != null ? (
+      render: (_, row) => (
+        <div className="flex items-center gap-1.5">
+          {(row as any).monitorId != null && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setViewingMonitorId((row as any).monitorId) }}
+              className="p-1.5 text-muted-foreground hover:text-foreground border border-border rounded hover:bg-accent transition-colors min-h-[32px]"
+              title="View Monitor"
+            >
+              <Radar className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
-            onClick={(e) => { e.stopPropagation(); setViewingMonitorId((row as any).monitorId) }}
-            className="p-1.5 text-muted-foreground hover:text-foreground border border-border rounded hover:bg-accent transition-colors min-h-[32px]"
-            title="View Monitor"
+            onClick={(e) => { e.stopPropagation(); setViewingSuggestion(row) }}
+            className={`p-1.5 border border-border rounded hover:bg-accent transition-colors min-h-[32px] ${
+              (row as any).suggestedResolution ? "text-amber-500 hover:text-amber-600" : "text-muted-foreground/40 hover:text-muted-foreground"
+            }`}
+            title={(row as any).suggestedResolution ? "View Suggested Resolution" : "No suggested resolution"}
           >
-            <Radar className="w-3.5 h-3.5" />
+            <Lightbulb className="w-3.5 h-3.5" />
           </button>
-        ) : null,
+        </div>
+      ),
     },
   ]
 
@@ -186,6 +202,14 @@ export function ResolvedIncidents() {
         <MonitorDetailPopup
           monitorId={viewingMonitorId}
           onClose={() => setViewingMonitorId(null)}
+        />
+      )}
+
+      {viewingSuggestion && (
+        <SuggestedResolutionPopup
+          resolution={viewingSuggestion.suggestedResolution}
+          reason={viewingSuggestion.suggestedResolutionReason}
+          onClose={() => setViewingSuggestion(null)}
         />
       )}
     </div>

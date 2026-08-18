@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, CheckCircle, TrendingUp, Radar } from "lucide-react"
+import { X, CheckCircle, TrendingUp, Radar, Lightbulb } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SuggestedResolutionPopup } from "@/components/suggested-resolution-popup"
 import { SeverityBadge } from "@/components/severity-badge"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 
@@ -29,6 +30,8 @@ interface ResolvedIncident {
   severity: string
   failureCount: number
   resolutionNotes: string | null
+  suggestedResolution: string | null
+  suggestedResolutionReason: string | null
   firstSeen: string | null
   lastSeen: string | null
   resolvedAt: string | null
@@ -50,6 +53,7 @@ export function ResolvedIncidentDetail({ incident, onClose }: Props) {
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [showMonitor, setShowMonitor] = useState(false)
+  const [showSuggestion, setShowSuggestion] = useState(false)
 
   // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED / DATA_RECENCY
   const { data: groupNameData } = useQuery<{ name: string | null }>({
@@ -263,12 +267,29 @@ export function ResolvedIncidentDetail({ incident, onClose }: Props) {
               View Monitor
             </button>
           )}
+          <button
+            onClick={() => setShowSuggestion(true)}
+            className={`px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-border rounded-md hover:bg-accent transition-colors ${
+              incident.suggestedResolution ? "text-amber-500" : "text-muted-foreground/40"
+            }`}
+          >
+            <Lightbulb className="w-4 h-4" />
+            Suggested Resolution
+          </button>
         </div>
 
         {showMonitor && incident.monitorId != null && (
           <MonitorDetailPopup
             monitorId={incident.monitorId}
             onClose={() => setShowMonitor(false)}
+          />
+        )}
+
+        {showSuggestion && (
+          <SuggestedResolutionPopup
+            resolution={incident.suggestedResolution}
+            reason={incident.suggestedResolutionReason}
+            onClose={() => setShowSuggestion(false)}
           />
         )}
       </div>

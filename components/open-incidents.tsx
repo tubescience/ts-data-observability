@@ -2,12 +2,14 @@
 
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { X, Radar, Copy, Check } from "lucide-react"
+import { X, Radar, Copy, Check, ArrowUp, ArrowDown, Minus, Lightbulb } from "lucide-react"
 import { useTagColors, TagBadges } from "@/components/tag-colors"
 import { IncidentDetail } from "@/components/incident-detail"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
+import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/suggested-resolution-popup"
 import { SeverityBadge } from "@/components/severity-badge"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
+import { formatTick } from "@/components/chart-utils"
 
 interface Incident {
   incidentId: number
@@ -23,6 +25,8 @@ interface Incident {
   failureCount: number
   lastMetric: number | null
   lastThreshold: number | null
+  suggestedResolution: string | null
+  suggestedResolutionReason: string | null
   firstSeen: string | null
   lastSeen: string | null
 }
@@ -36,6 +40,7 @@ export function OpenIncidents() {
   const [resolving, setResolving] = useState<Incident | null>(null)
   const [viewing, setViewing] = useState<Incident | null>(null)
   const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
+  const [viewingSuggestion, setViewingSuggestion] = useState<Incident | null>(null)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [notes, setNotes] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
@@ -157,6 +162,12 @@ export function OpenIncidents() {
       className: "text-xs",
     },
     {
+      key: "lastMetric",
+      label: "vs Threshold",
+      className: "text-xs",
+      render: (_, row) => <ThresholdIndicator metric={(row as any).lastMetric} threshold={(row as any).lastThreshold} />,
+    },
+    {
       key: "firstSeen",
       label: "First Seen",
       className: "text-xs text-muted-foreground",
@@ -183,6 +194,15 @@ export function OpenIncidents() {
               <Radar className="w-3.5 h-3.5" />
             </button>
           )}
+          <button
+            onClick={(e) => { e.stopPropagation(); setViewingSuggestion(row) }}
+            className={`p-1.5 border border-border rounded hover:bg-accent transition-colors min-h-[32px] ${
+              (row as any).suggestedResolution ? "text-amber-500 hover:text-amber-600" : "text-muted-foreground/40 hover:text-muted-foreground"
+            }`}
+            title={(row as any).suggestedResolution ? "View Suggested Resolution" : "No suggested resolution"}
+          >
+            <Lightbulb className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); setResolving(row) }}
             className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors min-h-[32px]"
@@ -286,7 +306,7 @@ export function OpenIncidents() {
         <IncidentDetail
           incident={viewing}
           onClose={() => setViewing(null)}
-          onResolve={(inc) => { setViewing(null); setResolving(inc) }}
+          onResolve={(inc, prefillNotes) => { setViewing(null); setResolving(inc); setNotes(prefillNotes || "") }}
         />
       )}
 
@@ -294,6 +314,19 @@ export function OpenIncidents() {
         <MonitorDetailPopup
           monitorId={viewingMonitorId}
           onClose={() => setViewingMonitorId(null)}
+        />
+      )}
+
+      {viewingSuggestion && (
+        <SuggestedResolutionPopup
+          resolution={viewingSuggestion.suggestedResolution}
+          reason={viewingSuggestion.suggestedResolutionReason}
+          onClose={() => setViewingSuggestion(null)}
+          onUseInResolve={() => {
+            setNotes(buildSuggestionMessage(viewingSuggestion.suggestedResolution, viewingSuggestion.suggestedResolutionReason))
+            setResolving(viewingSuggestion)
+            setViewingSuggestion(null)
+          }}
         />
       )}
 
@@ -352,4 +385,22 @@ function formatPST(iso: string | null): string {
   } catch {
     return iso.slice(0, 16).replace("T", " ")
   }
+}
+
+function ThresholdIndicator({ metric, threshold }: { metric: number | null; threshold: number | null }) {
+  if (metric == null || threshold == null) return <span className="text-muted-foreground">—</span>
+
+  const diff = metric - threshold
+  const Icon = diff > 0 ? ArrowUp : diff < 0 ? ArrowDown : Minus
+  const color = diff < 0 ? "text-red-500" : diff > 0 ? "text-blue-500" : "text-muted-foreground"
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-mono ${color}`}
+      title={`Value ${formatTick(metric)} vs threshold ${formatTick(threshold)}`}
+    >
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      {formatTick(metric)}
+    </span>
+  )
 }

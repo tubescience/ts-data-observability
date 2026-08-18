@@ -16,7 +16,16 @@ export async function GET() {
           MONITOR_ID, MONITOR_NAME, TARGET_DATABASE, TARGET_SCHEMA,
           TARGET_TABLE, ENABLED, OWNER, DESCRIPTION,
           SCHEDULE_CRON, WAREHOUSE, TASK_NAME, TAGS,
-          CONVERT_TIMEZONE('America/Los_Angeles', CREATED_AT) as CREATED_AT_PST
+          CONVERT_TIMEZONE('America/Los_Angeles', CREATED_AT) as CREATED_AT_PST,
+          -- SOURCE_LAYER: derived from the TARGET_TABLE naming convention.
+          CASE
+            WHEN STARTSWITH(UPPER(TARGET_TABLE), 'SRC_') THEN 'RAW'
+            WHEN STARTSWITH(UPPER(TARGET_TABLE), 'V_') THEN 'REPORTING'
+            WHEN STARTSWITH(UPPER(TARGET_TABLE), 'FCT_')
+              OR STARTSWITH(UPPER(TARGET_TABLE), 'STG_')
+              OR STARTSWITH(UPPER(TARGET_TABLE), 'DIM_') THEN 'STG'
+            ELSE 'UNCLASSIFIED'
+          END AS SOURCE_LAYER
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_MONITORS
         ORDER BY MONITOR_NAME
       `),
@@ -24,7 +33,27 @@ export async function GET() {
         SELECT
           CONFIG_ID, MONITOR_ID, CHECK_TYPE, ENABLED, SEVERITY,
           THRESHOLD_PCT, THRESHOLD_VALUE, DATE_COLUMN, KEY_COLUMNS,
-          NULL_COLUMNS, SUM_COLUMN, GROUP_BY_COLUMN
+          NULL_COLUMNS, SUM_COLUMN, GROUP_BY_COLUMN,
+          -- GRANULARITY: derived from GROUP_BY_COLUMN, falling back to CHECK_TYPE
+          -- for the dedicated SPEND_* checks that carry the grain in their name.
+          CASE
+            WHEN GROUP_BY_COLUMN IN ('ACCOUNT_ID', 'ADVERTISER_ID', 'CUSTOMER_ID') OR CHECK_TYPE = 'SPEND_ACCOUNT' THEN 'ACCOUNT'
+            WHEN GROUP_BY_COLUMN = 'CLIENT_ID' OR CHECK_TYPE = 'SPEND_CLIENT' THEN 'CLIENT'
+            WHEN GROUP_BY_COLUMN = 'PLATFORM' OR CHECK_TYPE = 'SPEND_PLATFORM' THEN 'PLATFORM'
+            ELSE 'TABLE-TOTAL'
+          END AS GRANULARITY,
+          -- DOMAIN: unambiguous for dedicated SPEND_* check types; heuristic
+          -- (SUM_COLUMN name match) for the generic SUM_VALUE* family, since
+          -- those can validate non-spend metrics too. "COST" is included
+          -- alongside "SPEND" since some sources (e.g. AppLovin) name their
+          -- spend column COST instead. Everything else defaults to its own
+          -- CHECK_TYPE as the domain label.
+          CASE
+            WHEN CHECK_TYPE IN ('SPEND_ACCOUNT', 'SPEND_CLIENT', 'SPEND_PLATFORM', 'SRC_SPEND_ACCOUNT', 'SRC_SPEND_CLIENT') THEN 'SPEND'
+            WHEN CHECK_TYPE IN ('SUM_VALUE_GROUPED', 'SUM_VALUE', 'SUM_TOTAL')
+              AND (UPPER(COALESCE(SUM_COLUMN, '')) LIKE '%SPEND%' OR UPPER(COALESCE(SUM_COLUMN, '')) LIKE '%COST%') THEN 'SPEND'
+            ELSE CHECK_TYPE
+          END AS DOMAIN
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG
         ORDER BY MONITOR_ID, CHECK_TYPE
       `),
@@ -53,6 +82,8 @@ export async function GET() {
         nullColumns: c.NULL_COLUMNS,
         sumColumn: c.SUM_COLUMN,
         groupByColumn: c.GROUP_BY_COLUMN,
+        granularity: c.GRANULARITY,
+        domain: c.DOMAIN,
       })
     }
 
@@ -73,6 +104,7 @@ export async function GET() {
       scheduleCron: r.SCHEDULE_CRON,
       warehouse: r.WAREHOUSE,
       taskName: r.TASK_NAME,
+      sourceLayer: r.SOURCE_LAYER,
       tags: r.TAGS ? r.TAGS.split(",").map((t: string) => t.trim()).filter(Boolean) : [],
       createdAt: toIso(r.CREATED_AT_PST),
       lastRun: lastRunByMonitor[r.MONITOR_ID] || null,
