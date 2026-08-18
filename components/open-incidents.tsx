@@ -2,11 +2,13 @@
 
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { X, Radar, Copy, Check, ArrowUp, ArrowDown, Minus, Lightbulb } from "lucide-react"
-import { useTagColors, TagBadges } from "@/components/tag-colors"
+import { X, Radar, Copy, Check, ArrowUp, ArrowDown, Minus, Lightbulb, CheckCircle2, AlertCircle } from "lucide-react"
+import { useTagColors, TagBadges, TagMultiSelect } from "@/components/tag-colors"
 import { IncidentDetail } from "@/components/incident-detail"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
 import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/suggested-resolution-popup"
+import { ResolvedIncidents } from "@/components/resolved-incidents"
+import { AnomaliesView } from "@/components/anomalies-view"
 import { SeverityBadge } from "@/components/severity-badge"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 import { formatTick } from "@/components/chart-utils"
@@ -41,13 +43,15 @@ export function OpenIncidents() {
   const [viewing, setViewing] = useState<Incident | null>(null)
   const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
   const [viewingSuggestion, setViewingSuggestion] = useState<Incident | null>(null)
+  const [showResolved, setShowResolved] = useState(false)
+  const [showAnomalies, setShowAnomalies] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [notes, setNotes] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
   const [checkFilter, setCheckFilter] = useState("")
   const [targetFilter, setTargetFilter] = useState("")
   const [groupFilter, setGroupFilter] = useState("")
-  const [tagFilter, setTagFilter] = useState("")
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const today = getPSTDateOffset(0)
   const yesterday = getPSTDateOffset(-1)
   const thirtyDaysAgo = getPSTDateOffset(-30)
@@ -91,7 +95,7 @@ export function OpenIncidents() {
     if (checkFilter && i.checkType !== checkFilter) return false
     if (targetFilter && !i.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
     if (groupFilter && !(i.groupValue || "").toLowerCase().includes(groupFilter.toLowerCase()) && !(i.groupName || "").toLowerCase().includes(groupFilter.toLowerCase())) return false
-    if (tagFilter && !i.tags.includes(tagFilter)) return false
+    if (tagFilter.length > 0 && !tagFilter.every((t) => i.tags.includes(t))) return false
     return true
   }
 
@@ -216,8 +220,24 @@ export function OpenIncidents() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-xl sm:text-2xl font-semibold">Open Incidents ({incidents.length})</h2>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAnomalies(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-border rounded-md hover:bg-accent transition-colors"
+          >
+            <AlertCircle className="w-4 h-4" />
+            Anomalies
+          </button>
+          <button
+            onClick={() => setShowResolved(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-border rounded-md hover:bg-accent transition-colors"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Resolved Incidents
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 text-sm">
@@ -268,14 +288,7 @@ export function OpenIncidents() {
           placeholder="Search group..."
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-36"
         />
-        <select
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
-        >
-          <option value="">All Tags</option>
-          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <TagMultiSelect allTags={allTags} selected={tagFilter} onChange={setTagFilter} colorMap={tagColors} className="w-full sm:w-auto" />
         <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
           <span>From</span>
           <input
@@ -328,6 +341,36 @@ export function OpenIncidents() {
             setViewingSuggestion(null)
           }}
         />
+      )}
+
+      {showAnomalies && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-end p-2 border-b border-border sticky top-0 bg-card z-10">
+              <button onClick={() => setShowAnomalies(false)} className="text-muted-foreground hover:text-foreground p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <AnomaliesView />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResolved && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-end p-2 border-b border-border sticky top-0 bg-card z-10">
+              <button onClick={() => setShowResolved(false)} className="text-muted-foreground hover:text-foreground p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <ResolvedIncidents />
+            </div>
+          </div>
+        </div>
       )}
 
       {resolving && (

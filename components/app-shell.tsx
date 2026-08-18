@@ -4,9 +4,8 @@ import { useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { DashboardView } from "@/components/dashboard-view"
 import { OpenIncidents } from "@/components/open-incidents"
-import { ResolvedIncidents } from "@/components/resolved-incidents"
-import { AnomaliesView } from "@/components/anomalies-view"
 import { MonitorsView } from "@/components/monitors-view"
+import { SpendMonitorsView } from "@/components/spend-monitors-view"
 import { TrendsView } from "@/components/trends-view"
 import { CreditsView } from "@/components/credits-view"
 import { TasksView } from "@/components/tasks-view"
@@ -18,9 +17,8 @@ import { RefreshCw, Menu } from "lucide-react"
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
   { id: "open-incidents", label: "Open Incidents" },
-  { id: "resolved", label: "Resolved" },
-  { id: "anomalies", label: "Anomalies" },
   { id: "monitors", label: "Monitors" },
+  { id: "spend-monitors", label: "Spend Monitors" },
   { id: "trends", label: "Trends" },
   { id: "credits", label: "Credits" },
   { id: "tasks", label: "Tasks" },
@@ -98,9 +96,8 @@ export function AppShell() {
       <main className="max-w-[1440px] mx-auto px-4 py-4 sm:py-6" key={refreshKey}>
         {activeTab === "dashboard" && <DashboardView />}
         {activeTab === "open-incidents" && <OpenIncidents />}
-        {activeTab === "resolved" && <ResolvedIncidents />}
-        {activeTab === "anomalies" && <AnomaliesView />}
         {activeTab === "monitors" && <MonitorsView />}
+        {activeTab === "spend-monitors" && <SpendMonitorsView />}
         {activeTab === "trends" && <TrendsView />}
         {activeTab === "credits" && <CreditsView />}
         {activeTab === "tasks" && <TasksView />}

@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CheckCircle, XCircle, ChevronDown, ChevronRight, BarChart3, Copy, Check } from "lucide-react"
 import { MonitorHistory } from "@/components/monitor-history"
-import { useTagColors, TagBadge } from "@/components/tag-colors"
+import { useTagColors, TagBadge, TagMultiSelect } from "@/components/tag-colors"
 import { SeverityBadge } from "@/components/severity-badge"
 
 function formatPST(iso: string | null): string {
@@ -60,7 +60,7 @@ export function MonitorsView() {
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [nameFilter, setNameFilter] = useState<string>("")
-  const [tagFilter, setTagFilter] = useState<string>("")
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sourceLayerFilter, setSourceLayerFilter] = useState<string>("")
   const [granularityFilter, setGranularityFilter] = useState<string>("")
   const [domainFilter, setDomainFilter] = useState<string>("")
@@ -72,9 +72,8 @@ export function MonitorsView() {
   const allMonitors = data || []
 
   type FilterKey = "status" | "tag" | "sourceLayer" | "granularity" | "domain" | "name"
-  const activeFilters: Record<FilterKey, string> = {
+  const activeFilters: Record<Exclude<FilterKey, "tag">, string> = {
     status: statusFilter,
-    tag: tagFilter,
     sourceLayer: sourceLayerFilter,
     granularity: granularityFilter,
     domain: domainFilter,
@@ -90,7 +89,7 @@ export function MonitorsView() {
         if (activeFilters.status === "enabled" && !m.enabled) return false
         if (activeFilters.status === "disabled" && m.enabled) return false
       }
-      if (excludeKey !== "tag" && activeFilters.tag && !(m.tags || []).includes(activeFilters.tag)) return false
+      if (excludeKey !== "tag" && tagFilter.length > 0 && !tagFilter.some((t) => (m.tags || []).includes(t))) return false
       if (excludeKey !== "sourceLayer" && activeFilters.sourceLayer && m.sourceLayer !== activeFilters.sourceLayer) return false
       if (excludeKey !== "granularity" && activeFilters.granularity && !m.checks.some((c) => c.granularity === activeFilters.granularity)) return false
       if (excludeKey !== "domain" && activeFilters.domain && !m.checks.some((c) => c.domain === activeFilters.domain)) return false
@@ -111,7 +110,11 @@ export function MonitorsView() {
     return [...values].sort()
   }
 
-  const allTags = optionsFor("tag", tagFilter, (m) => m.tags || [])
+  const allTags = (() => {
+    const values = new Set(scopedMonitors("tag").flatMap((m) => m.tags || []))
+    tagFilter.forEach((t) => values.add(t))
+    return [...values].sort()
+  })()
   const allSourceLayers = optionsFor("sourceLayer", sourceLayerFilter, (m) => [m.sourceLayer])
   const allGranularities = optionsFor("granularity", granularityFilter, (m) => m.checks.map((c) => c.granularity))
   const allDomains = optionsFor("domain", domainFilter, (m) => m.checks.map((c) => c.domain))
@@ -177,14 +180,7 @@ export function MonitorsView() {
           <option value="">All Domains</option>
           {allDomains.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
-        >
-          <option value="">All Tags</option>
-          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <TagMultiSelect allTags={allTags} selected={tagFilter} onChange={setTagFilter} colorMap={tagColors} className="w-full sm:w-auto" />
       </div>
 
       <div className="space-y-3">
