@@ -4,10 +4,16 @@ export const dynamic = "force-dynamic"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { incidentId, resolutionNotes } = body
+    const { incidentId, incidentIds, resolutionNotes } = body
 
-    if (!incidentId) {
-      return Response.json({ error: "incidentId is required" }, { status: 400 })
+    const ids: number[] = Array.isArray(incidentIds)
+      ? incidentIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isInteger(id))
+      : incidentId != null && Number.isInteger(Number(incidentId))
+      ? [Number(incidentId)]
+      : []
+
+    if (ids.length === 0) {
+      return Response.json({ error: "incidentId or incidentIds is required" }, { status: 400 })
     }
     if (!resolutionNotes || !resolutionNotes.trim()) {
       return Response.json({ error: "resolutionNotes is required" }, { status: 400 })
@@ -20,10 +26,10 @@ export async function POST(request: Request) {
           RESOLVED_AT = CURRENT_TIMESTAMP(),
           RESOLUTION_NOTES = '${resolutionNotes.replace(/'/g, "''")}',
           UPDATED_AT = CURRENT_TIMESTAMP()
-      WHERE INCIDENT_ID = ${incidentId}
+      WHERE INCIDENT_ID IN (${ids.join(",")})
     `)
 
-    return Response.json({ success: true })
+    return Response.json({ success: true, resolvedCount: ids.length })
   } catch (e) {
     console.error(new Date().toISOString(), "[incidents/resolve]", e)
     return Response.json(

@@ -2,11 +2,13 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb } from "lucide-react"
+import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb, Radio } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
 import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/suggested-resolution-popup"
+import { LIVE_SPEND_CHECK_TYPES, useLiveSpendCheck, LiveSpendPopup } from "@/components/live-spend-check"
+import { ML_FORECAST_CHECK_TYPES, useMlForecastCheck, MlForecastPopup } from "@/components/ml-forecast-check"
 import { SeverityBadge } from "@/components/severity-badge"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 
@@ -60,6 +62,8 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [showMonitor, setShowMonitor] = useState(false)
   const [showSuggestion, setShowSuggestion] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
+  const liveSpend = useLiveSpendCheck()
+  const mlForecast = useMlForecastCheck()
 
   // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED / DATA_RECENCY
   const { data: groupNameData } = useQuery<{ name: string | null }>({
@@ -264,7 +268,6 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           )}
         </div>
 
-
         {/* Actions */}
         <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 p-4 border-t border-border sticky bottom-0 bg-card">
           <button
@@ -288,6 +291,28 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             >
               <Radar className="w-4 h-4" />
               View Monitor
+            </button>
+          )}
+
+          {LIVE_SPEND_CHECK_TYPES.has(incident.checkType) && incident.groupValue && (
+            <button
+              onClick={() => liveSpend.runLiveSpendCheck(incident)}
+              disabled={liveSpend.checkingLiveSpend}
+              className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Radio className="w-4 h-4" />
+              {liveSpend.checkingLiveSpend ? "Checking..." : "Check Live Spend"}
+            </button>
+          )}
+
+          {ML_FORECAST_CHECK_TYPES.has(incident.checkType) && incident.groupValue && (
+            <button
+              onClick={() => mlForecast.runMlForecastCheck(incident)}
+              disabled={mlForecast.checkingMlForecast}
+              className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-purple-500 text-purple-600 dark:text-purple-400 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <TrendingUp className="w-4 h-4" />
+              {mlForecast.checkingMlForecast ? "Checking..." : "Check ML Forecast"}
             </button>
           )}
 
@@ -331,6 +356,32 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             onUseInResolve={() => {
               setShowSuggestion(false)
               onResolve(incident, buildSuggestionMessage(incident.suggestedResolution, incident.suggestedResolutionReason))
+            }}
+          />
+        )}
+
+        {liveSpend.showLiveSpendPopup && (
+          <LiveSpendPopup
+            loading={liveSpend.checkingLiveSpend}
+            error={liveSpend.liveSpendError}
+            result={liveSpend.liveSpendResult}
+            onClose={() => liveSpend.setShowLiveSpendPopup(false)}
+            onUseInResolve={(text) => {
+              liveSpend.setShowLiveSpendPopup(false)
+              onResolve(incident, text)
+            }}
+          />
+        )}
+
+        {mlForecast.showMlForecastPopup && (
+          <MlForecastPopup
+            loading={mlForecast.checkingMlForecast}
+            error={mlForecast.mlForecastError}
+            result={mlForecast.mlForecastResult}
+            onClose={() => mlForecast.setShowMlForecastPopup(false)}
+            onUseInResolve={(text) => {
+              mlForecast.setShowMlForecastPopup(false)
+              onResolve(incident, text)
             }}
           />
         )}

@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CheckCircle, XCircle, ChevronDown, ChevronRight, Copy, Check } from "lucide-react"
 import { SpendMonitorChart } from "@/components/spend-monitor-chart"
-import { useTagColors, TagBadge } from "@/components/tag-colors"
+import { useTagColors, TagBadge, TagMultiSelect } from "@/components/tag-colors"
 
 function formatPST(iso: string | null): string {
   if (!iso) return "—"
@@ -58,29 +58,25 @@ export function SpendMonitorsView() {
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [copiedId, setCopiedId] = useState<number | null>(null)
-  const [granularityMode, setGranularityMode] = useState<"ACCOUNT" | "CLIENT">("ACCOUNT")
   const [showActive, setShowActive] = useState(true)
   const [nameFilter, setNameFilter] = useState<string>("")
-  const [tagFilter, setTagFilter] = useState<string>("")
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sourceLayerFilter, setSourceLayerFilter] = useState<string>("")
   const [platformFilter, setPlatformFilter] = useState<string>("")
 
   if (isLoading) return <div className="text-muted-foreground">Loading spend monitors...</div>
   if (error) return <div className="text-destructive">Failed to load spend monitors</div>
 
-  // Scoped to the selected grouping mode — a monitor shows up under "By
-  // Account" only if it has an account-grain spend check, and under "By
-  // Client" only if it has a client-grain one. Platform-grain spend checks
-  // (e.g. the V_SPEND_DAILY family) have neither, so they never appear here.
-  const spendMonitors = (data || []).filter((m) => m.checks.some((c) => c.domain === "SPEND" && c.granularity === granularityMode))
+  // Any monitor with an account- or client-grain spend check — each one's
+  // expanded view renders both a "By Account" and a "By Client" section
+  // (the latter rolling accounts up under their owning client), so there's
+  // no need to pick a mode up front. Platform-grain spend checks (e.g. the
+  // V_SPEND_DAILY family) have neither, so they never appear here.
+  const spendMonitors = (data || []).filter((m) =>
+    m.checks.some((c) => c.domain === "SPEND" && (c.granularity === "ACCOUNT" || c.granularity === "CLIENT"))
+  )
 
   type FilterKey = "tag" | "sourceLayer" | "platform" | "name"
-  const activeFilters: Record<FilterKey, string> = {
-    tag: tagFilter,
-    sourceLayer: sourceLayerFilter,
-    platform: platformFilter,
-    name: nameFilter,
-  }
 
   // Applies every filter except `excludeKey` — used both for the final
   // displayed list (excludeKey = null) and for computing each dropdown's own
@@ -88,11 +84,11 @@ export function SpendMonitorsView() {
   function scopedMonitors(excludeKey: FilterKey | null): Monitor[] {
     return spendMonitors.filter((m) => {
       if (m.enabled !== showActive) return false
-      if (excludeKey !== "tag" && activeFilters.tag && !(m.tags || []).includes(activeFilters.tag)) return false
-      if (excludeKey !== "sourceLayer" && activeFilters.sourceLayer && m.sourceLayer !== activeFilters.sourceLayer) return false
-      if (excludeKey !== "platform" && activeFilters.platform && m.platform !== activeFilters.platform) return false
-      if (excludeKey !== "name" && activeFilters.name) {
-        const regex = new RegExp(`\\b${activeFilters.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      if (excludeKey !== "tag" && tagFilter.length > 0 && !tagFilter.every((t) => (m.tags || []).includes(t))) return false
+      if (excludeKey !== "sourceLayer" && sourceLayerFilter && m.sourceLayer !== sourceLayerFilter) return false
+      if (excludeKey !== "platform" && platformFilter && m.platform !== platformFilter) return false
+      if (excludeKey !== "name" && nameFilter) {
+        const regex = new RegExp(`\\b${nameFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
         if (!regex.test(m.monitorName) && !regex.test(m.targetTable)) return false
       }
       return true
@@ -108,7 +104,11 @@ export function SpendMonitorsView() {
     return [...values].sort()
   }
 
-  const allTags = optionsFor("tag", tagFilter, (m) => m.tags || [])
+  const allTags = (() => {
+    const values = new Set(scopedMonitors("tag").flatMap((m) => m.tags || []))
+    tagFilter.forEach((t) => values.add(t))
+    return [...values].sort()
+  })()
   const allSourceLayers = optionsFor("sourceLayer", sourceLayerFilter, (m) => [m.sourceLayer])
   const allPlatforms = optionsFor("platform", platformFilter, (m) => [m.platform])
 
@@ -127,24 +127,6 @@ export function SpendMonitorsView() {
     <div className="space-y-4">
       <div className="flex items-center gap-4 flex-wrap">
         <h2 className="text-xl sm:text-2xl font-semibold">Spend Monitors ({monitors.length})</h2>
-        <div className="inline-flex rounded-md border border-border overflow-hidden">
-          <button
-            onClick={() => setGranularityMode("ACCOUNT")}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-              granularityMode === "ACCOUNT" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-          >
-            By Account
-          </button>
-          <button
-            onClick={() => setGranularityMode("CLIENT")}
-            className={`px-3 py-1.5 text-sm font-medium border-l border-border transition-colors ${
-              granularityMode === "CLIENT" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-          >
-            By Client
-          </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
@@ -156,14 +138,6 @@ export function SpendMonitorsView() {
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-64"
         />
         <select
-          value={platformFilter}
-          onChange={(e) => setPlatformFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
-        >
-          <option value="">All Platforms</option>
-          {allPlatforms.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select
           value={sourceLayerFilter}
           onChange={(e) => setSourceLayerFilter(e.target.value)}
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
@@ -172,13 +146,14 @@ export function SpendMonitorsView() {
           {allSourceLayers.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <select
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
+          value={platformFilter}
+          onChange={(e) => setPlatformFilter(e.target.value)}
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
         >
-          <option value="">All Tags</option>
-          {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+          <option value="">All Platforms</option>
+          {allPlatforms.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
+        <TagMultiSelect allTags={allTags} selected={tagFilter} onChange={setTagFilter} colorMap={tagColors} className="w-full sm:w-auto" />
         <button
           onClick={() => setShowActive((v) => !v)}
           role="switch"
@@ -194,7 +169,7 @@ export function SpendMonitorsView() {
 
       <div className="space-y-3">
         {monitors.map((m, i) => {
-          const spendChecks = m.checks.filter((c) => c.domain === "SPEND" && c.granularity === granularityMode)
+          const spendChecks = m.checks.filter((c) => c.domain === "SPEND" && (c.granularity === "ACCOUNT" || c.granularity === "CLIENT"))
           const isOpen = expanded.has(m.monitorId)
           return (
             <div key={`${m.monitorId}-${i}`} className="border border-border rounded-lg overflow-hidden">

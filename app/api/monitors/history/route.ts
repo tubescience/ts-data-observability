@@ -20,21 +20,24 @@ export async function GET(request: NextRequest) {
     }
 
     await querySnowflake("USE ROLE MCP_MONITOR")
+    // Name resolution used to scan V_SPEND_DAILY (300M+ rows) for DISTINCT
+    // account/client ids — 3-10s per request. SRC_TS_ACCOUNT_LIST (~760 rows)
+    // and SRC_TS_CLIENT_LIST (~230 rows) are the small dimension tables
+    // behind it and carry the same id->name mapping plus the account's
+    // owning CLIENT_ID, so this also gives us the account->client rollup
+    // needed for the "by client" grouping — in under a second.
     const rows = await querySnowflake(`
-      WITH client_names AS (
-        SELECT DISTINCT client_id::VARCHAR AS id, client_name AS name
-        FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE client_id IS NOT NULL AND client_name IS NOT NULL
-      ), account_names AS (
-        SELECT DISTINCT account_id::VARCHAR AS id, account_name AS name
-        FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE account_id IS NOT NULL AND account_name IS NOT NULL
-      ), client_check_types AS (
-        SELECT check_type FROM VALUES ('SPEND_CLIENT'), ('SRC_SPEND_CLIENT') AS t(check_type)
-      ), account_check_types AS (
-        SELECT check_type FROM VALUES ('SPEND_ACCOUNT'), ('SRC_SPEND_ACCOUNT'), ('SUM_VALUE_GROUPED'), ('DATA_RECENCY') AS t(check_type)
-      ), names AS (
-        SELECT c.id, c.name, ct.check_type FROM client_names c CROSS JOIN client_check_types ct
-        UNION ALL
-        SELECT a.id, a.name, ct.check_type FROM account_names a CROSS JOIN account_check_types ct
+      WITH account_info AS (
+        SELECT
+          a.ACCOUNT_ID::VARCHAR AS account_id,
+          a.ACCOUNT_NAME AS account_name,
+          a.CLIENT_ID::VARCHAR AS client_id,
+          c.CLIENT_NAME AS client_name
+        FROM TS_PROD_DB.INGEST.SRC_TS_ACCOUNT_LIST a
+        LEFT JOIN TS_PROD_DB.INGEST.SRC_TS_CLIENT_LIST c ON c.CLIENT_ID = a.CLIENT_ID
+      ), client_info AS (
+        SELECT CLIENT_ID::VARCHAR AS client_id, CLIENT_NAME AS client_name
+        FROM TS_PROD_DB.INGEST.SRC_TS_CLIENT_LIST
       )
       SELECT
         r.CHECK_TYPE,
@@ -43,29 +46,47 @@ export async function GET(request: NextRequest) {
         r.METRIC_VALUE,
         r.THRESHOLD,
         r.GROUP_VALUE,
-        n.name AS GROUP_NAME,
+        COALESCE(ai.account_name, ci.client_name) AS GROUP_NAME,
+        CASE WHEN ai.account_id IS NOT NULL THEN 'account' WHEN ci.client_id IS NOT NULL THEN 'client' ELSE NULL END AS GROUP_KIND,
+        ai.client_id AS GROUP_CLIENT_ID,
+        COALESCE(ai.client_name, ci.client_name) AS GROUP_CLIENT_NAME,
+        -- THRESHOLD is the comparison baseline (e.g. yesterday's value); the
+        -- allowed swing (threshold_pct) is per-row in DETAILS since it can be
+        -- customized per account, falling back to the check's configured
+        -- THRESHOLD_PCT when DETAILS doesn't carry it.
+        COALESCE(r.DETAILS:threshold_pct::FLOAT, cfg.THRESHOLD_PCT) AS EFFECTIVE_THRESHOLD_PCT,
         CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE as CHECK_DATE,
         CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS r
-      JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG c ON r.CONFIG_ID = c.CONFIG_ID
-      LEFT JOIN names n ON n.id = r.GROUP_VALUE::VARCHAR AND n.check_type = r.CHECK_TYPE
-      WHERE c.MONITOR_ID = ${Number(monitorId)}
+      JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG cfg ON r.CONFIG_ID = cfg.CONFIG_ID
+      LEFT JOIN account_info ai ON ai.account_id = r.GROUP_VALUE::VARCHAR
+      LEFT JOIN client_info ci ON ci.client_id = r.GROUP_VALUE::VARCHAR
+      WHERE cfg.MONITOR_ID = ${Number(monitorId)}
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE >= '${dateStart}'
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE <= '${dateEnd}'
       ORDER BY r.CHECK_TIMESTAMP ASC
     `)
 
-    const results = rows.map((r) => ({
-      checkType: r.CHECK_TYPE,
-      targetTable: r.TARGET_TABLE,
-      status: r.STATUS,
-      metricValue: r.METRIC_VALUE,
-      threshold: r.THRESHOLD,
-      groupValue: r.GROUP_VALUE,
-      groupName: r.GROUP_NAME || null,
-      checkDate: toIso(r.CHECK_DATE)?.slice(0, 10) ?? null,
-      checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
-    }))
+    const results = rows.map((r) => {
+      const pct = r.EFFECTIVE_THRESHOLD_PCT
+      const hasBand = r.THRESHOLD != null && pct != null
+      return {
+        checkType: r.CHECK_TYPE,
+        targetTable: r.TARGET_TABLE,
+        status: r.STATUS,
+        metricValue: r.METRIC_VALUE,
+        threshold: r.THRESHOLD,
+        thresholdMin: hasBand ? r.THRESHOLD * (1 - pct / 100) : null,
+        thresholdMax: hasBand ? r.THRESHOLD * (1 + pct / 100) : null,
+        groupValue: r.GROUP_VALUE,
+        groupName: r.GROUP_NAME || null,
+        groupKind: r.GROUP_KIND || null,
+        groupClientId: r.GROUP_CLIENT_ID || null,
+        groupClientName: r.GROUP_CLIENT_NAME || null,
+        checkDate: toIso(r.CHECK_DATE)?.slice(0, 10) ?? null,
+        checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
+      }
+    })
 
     return Response.json(results)
   } catch (e) {

@@ -12,8 +12,13 @@ interface HistoryResult {
   status: string
   metricValue: number | null
   threshold: number | null
+  thresholdMin: number | null
+  thresholdMax: number | null
   groupValue: string | null
   groupName: string | null
+  groupKind: "account" | "client" | null
+  groupClientId: string | null
+  groupClientName: string | null
   checkDate: string | null
   checkTimestamp: string | null
 }
@@ -35,13 +40,36 @@ const CHART_COLORS = [
   "#f97316", "#06b6d4", "#ec4899", "#14b8a6", "#8b5cf6",
 ]
 
-function buildChartData(rows: HistoryResult[], seriesKeyFn: (r: HistoryResult) => string) {
+interface SeriesSpec {
+  key: string
+  color?: string
+  dashed?: boolean
+  showLabel?: boolean
+  colorByThreshold?: boolean
+}
+
+const OUT_OF_RANGE_COLOR = "#ef4444"
+
+// Custom dot renderer for series flagged `colorByThreshold` — turns a point
+// red when its value falls outside that row's min/max threshold band.
+function ThresholdAwareDot(props: any) {
+  const { cx, cy, payload, dataKey, stroke } = props
+  const value = payload?.[dataKey]
+  const min = payload?.min
+  const max = payload?.max
+  if (cx == null || cy == null || value == null) return null
+  const outOfRange = (min != null && value < min) || (max != null && value > max)
+  return <circle cx={cx} cy={cy} r={outOfRange ? 4 : 3} fill={outOfRange ? OUT_OF_RANGE_COLOR : stroke} stroke={outOfRange ? OUT_OF_RANGE_COLOR : stroke} />
+}
+
+function buildChartData(rows: HistoryResult[], seriesKeyFn: (r: HistoryResult) => string, valueFn: (r: HistoryResult) => number | null = (r) => r.metricValue) {
   const byDate: Record<string, Record<string, number | null>> = {}
   for (const r of rows) {
-    if (r.checkDate && r.metricValue != null) {
+    const value = valueFn(r)
+    if (r.checkDate && value != null) {
       const key = seriesKeyFn(r)
       if (!byDate[r.checkDate]) byDate[r.checkDate] = {}
-      byDate[r.checkDate][key] = r.metricValue
+      byDate[r.checkDate][key] = value
     }
   }
   return Object.entries(byDate)
@@ -49,7 +77,8 @@ function buildChartData(rows: HistoryResult[], seriesKeyFn: (r: HistoryResult) =
     .map(([date, series]) => ({ date, ...series }))
 }
 
-function SeriesChart({ data, seriesKeys, height = 200 }: { data: Record<string, unknown>[]; seriesKeys: string[]; height?: number }) {
+function SeriesChart({ data, series, height = 220 }: { data: Record<string, unknown>[]; series: SeriesSpec[]; height?: number }) {
+  const primaryKeys = series.filter((s) => !s.dashed).map((s) => s.key)
   return (
     <div className="bg-background border border-border rounded-lg p-3">
       <ResponsiveContainer width="100%" height={height}>
@@ -59,22 +88,23 @@ function SeriesChart({ data, seriesKeys, height = 200 }: { data: Record<string, 
           <YAxis
             tick={{ fontSize: 11 }}
             stroke="var(--muted-foreground)"
-            width={getYAxisWidth(data, seriesKeys[0] || "value")}
+            width={getYAxisWidth(data, primaryKeys[0] || "value")}
             tickFormatter={formatTick}
           />
           <Tooltip content={<ChartTooltip />} />
-          {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
-          {seriesKeys.slice(0, 10).map((key, i) => (
+          {series.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+          {series.slice(0, 12).map((s, i) => (
             <Line
-              key={key}
+              key={s.key}
               type="monotone"
-              dataKey={key}
-              stroke={CHART_COLORS[i % CHART_COLORS.length]}
-              strokeWidth={2}
-              dot={{ r: 3 }}
+              dataKey={s.key}
+              stroke={s.color || CHART_COLORS[i % CHART_COLORS.length]}
+              strokeWidth={s.dashed ? 1.5 : 2}
+              strokeDasharray={s.dashed ? "4 3" : undefined}
+              dot={s.dashed ? false : s.colorByThreshold ? <ThresholdAwareDot /> : { r: 3 }}
               connectNulls
             >
-              <LabelList dataKey={key} position="top" fontSize={9} formatter={(v: unknown) => formatTick(Number(v))} />
+              {s.showLabel && <LabelList dataKey={s.key} position="top" fontSize={9} formatter={(v: unknown) => formatTick(Number(v))} />}
             </Line>
           ))}
         </LineChart>
@@ -83,11 +113,31 @@ function SeriesChart({ data, seriesKeys, height = 200 }: { data: Record<string, 
   )
 }
 
+// One entry per date, deduped (last value wins) — some monitors run more
+// than one check type against the same group+date and report the same
+// number (e.g. V_SPEND_DAILY_MCP's SUM_VALUE_GROUPED and SPEND_PLATFORM),
+// which would otherwise double totals.
+function dedupeByDate(rows: HistoryResult[]): HistoryResult[] {
+  const byDate = new Map<string, HistoryResult>()
+  for (const r of rows) {
+    if (!r.checkDate) continue
+    byDate.set(r.checkDate, r)
+  }
+  return [...byDate.values()].sort((a, b) => (a.checkDate || "").localeCompare(b.checkDate || ""))
+}
+
+function sumMetric(rows: HistoryResult[]): number {
+  return rows.reduce((sum, r) => sum + (r.metricValue ?? 0), 0)
+}
+
 export function SpendMonitorChart({ monitorId, spendCheckTypes, enabled }: SpendMonitorChartProps) {
   const defaults = getDefaultDates()
   const [dateStart, setDateStart] = useState(defaults.start)
   const [dateEnd, setDateEnd] = useState(defaults.end)
   const [openAccounts, setOpenAccounts] = useState<Set<string>>(new Set())
+  const [openClients, setOpenClients] = useState<Set<string>>(new Set())
+  const [accountSectionOpen, setAccountSectionOpen] = useState(false)
+  const [clientSectionOpen, setClientSectionOpen] = useState(false)
 
   const { data, isLoading, error } = useQuery<HistoryResult[]>({
     queryKey: ["monitor-history", monitorId, dateStart, dateEnd],
@@ -96,36 +146,61 @@ export function SpendMonitorChart({ monitorId, spendCheckTypes, enabled }: Spend
     enabled,
   })
 
-  const groupedResults = useMemo(
-    () => (data || []).filter((r) => spendCheckTypes.includes(r.checkType)),
-    [data, spendCheckTypes]
-  )
+  // A monitor's raw-layer checks are sometimes written with a SRC_ prefix
+  // that doesn't appear in the config's own CHECK_TYPE (e.g. config declares
+  // "SPEND_CLIENT" but ~15% of its actual results are "SRC_SPEND_CLIENT",
+  // same CONFIG_ID) — normalize both sides so those rows aren't dropped.
+  const results = useMemo(() => {
+    const normalize = (ct: string) => ct.replace(/^SRC_/, "")
+    const wanted = new Set(spendCheckTypes.map(normalize))
+    return (data || []).filter((r) => wanted.has(normalize(r.checkType)))
+  }, [data, spendCheckTypes])
 
-  // One accordion row per account, auto-derived from the results — no manual
-  // account selection needed — ordered by total spend in range, highest first.
-  // Some monitors run more than one check type against the same group+date
-  // (e.g. V_SPEND_DAILY_MCP's SUM_VALUE_GROUPED and SPEND_PLATFORM report the
-  // same number) — dedupe to one value per date per account before summing,
-  // otherwise those monitors would show double the real spend.
+  const accountRows = useMemo(() => results.filter((r) => r.groupKind === "account" && r.groupValue), [results])
+  const directClientRows = useMemo(() => results.filter((r) => r.groupKind === "client" && r.groupValue), [results])
+
+  // By Account: one accordion row per account, deduped/rolled up from raw
+  // rows, ordered by total spend in range, highest first.
   const accounts = useMemo(() => {
-    const byDatePerGroup = new Map<string, Map<string, HistoryResult>>()
-    const labelByGroup = new Map<string, string>()
-    for (const r of groupedResults) {
-      if (!r.groupValue || !r.checkDate) continue
-      if (!byDatePerGroup.has(r.groupValue)) byDatePerGroup.set(r.groupValue, new Map())
-      byDatePerGroup.get(r.groupValue)!.set(r.checkDate, r)
-      if (!labelByGroup.has(r.groupValue)) {
-        labelByGroup.set(r.groupValue, r.groupName ? `${r.groupName} (${r.groupValue})` : r.groupValue)
-      }
+    const map = new Map<string, { key: string; label: string; rows: HistoryResult[] }>()
+    for (const r of accountRows) {
+      const key = r.groupValue!
+      if (!map.has(key)) map.set(key, { key, label: r.groupName ? `${r.groupName} (${r.groupValue})` : r.groupValue!, rows: [] })
+      map.get(key)!.rows.push(r)
     }
-    const result: { key: string; label: string; rows: HistoryResult[]; totalSpend: number }[] = []
-    for (const [groupValue, byDate] of byDatePerGroup) {
-      const rows = [...byDate.values()].sort((a, b) => (a.checkDate || "").localeCompare(b.checkDate || ""))
-      const totalSpend = rows.reduce((sum, r) => sum + (r.metricValue ?? 0), 0)
-      result.push({ key: groupValue, label: labelByGroup.get(groupValue)!, rows, totalSpend })
+    return [...map.values()]
+      .map((a) => ({ ...a, rows: dedupeByDate(a.rows) }))
+      .sort((a, b) => sumMetric(b.rows) - sumMetric(a.rows))
+  }, [accountRows])
+
+  // By Client: roll accounts up under their owning client, plus any checks
+  // that are already client-grain (no account breakdown available for those).
+  const clients = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; accounts: { label: string; rows: HistoryResult[] }[] }>()
+    for (const acc of accounts) {
+      const rawRows = acc.rows
+      const first = rawRows[0]
+      const clientKey = first?.groupClientId || `account:${acc.key}`
+      const clientLabel = first?.groupClientName || acc.label
+      if (!map.has(clientKey)) map.set(clientKey, { key: clientKey, label: clientLabel, accounts: [] })
+      map.get(clientKey)!.accounts.push({ label: acc.label, rows: rawRows })
     }
-    return result.sort((a, b) => b.totalSpend - a.totalSpend)
-  }, [groupedResults])
+    const directByClient = new Map<string, HistoryResult[]>()
+    for (const r of directClientRows) {
+      const key = r.groupValue!
+      if (!directByClient.has(key)) directByClient.set(key, [])
+      directByClient.get(key)!.push(r)
+    }
+    for (const [key, rows] of directByClient) {
+      const deduped = dedupeByDate(rows)
+      const label = rows[0]?.groupName || key
+      if (!map.has(key)) map.set(key, { key, label, accounts: [] })
+      map.get(key)!.accounts.push({ label, rows: deduped })
+    }
+    return [...map.values()]
+      .map((c) => ({ ...c, totalSpend: c.accounts.reduce((sum, a) => sum + sumMetric(a.rows), 0) }))
+      .sort((a, b) => b.totalSpend - a.totalSpend)
+  }, [accounts, directClientRows])
 
   function toggleAccount(key: string) {
     setOpenAccounts((prev) => {
@@ -136,8 +211,17 @@ export function SpendMonitorChart({ monitorId, spendCheckTypes, enabled }: Spend
     })
   }
 
+  function toggleClient(key: string) {
+    setOpenClients((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
         <span>From</span>
         <input
@@ -158,41 +242,114 @@ export function SpendMonitorChart({ monitorId, spendCheckTypes, enabled }: Spend
       {isLoading && <div className="text-muted-foreground text-xs py-6 text-center">Loading spend history...</div>}
       {error && <div className="text-destructive text-xs py-4">Failed to load spend history</div>}
 
-      {!isLoading && !error && accounts.length === 0 && (
-        <div className="text-muted-foreground text-xs py-6 text-center">No spend results for selected date range</div>
-      )}
-
-      {!isLoading && !error && accounts.length > 0 && (
-        <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
-          {accounts.map((acc) => {
-            const isOpen = openAccounts.has(acc.key)
-            const chartData = isOpen ? buildChartData(acc.rows, () => "value") : []
-            return (
-              <div key={acc.key}>
-                <button
-                  onClick={() => toggleAccount(acc.key)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30 transition-colors text-left"
-                >
-                  {isOpen ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  )}
-                  <span className="font-medium">{acc.label}</span>
-                  <span className="text-muted-foreground ml-auto shrink-0">{formatTick(acc.totalSpend)} total · {acc.rows.length} results</span>
-                </button>
-                {isOpen && (
-                  <div className="px-3 pb-3">
-                    {chartData.length > 0 ? (
-                      <SeriesChart data={chartData} seriesKeys={["value"]} />
-                    ) : (
-                      <div className="text-muted-foreground text-xs py-4 text-center">No values in selected date range</div>
-                    )}
-                  </div>
-                )}
+      {!isLoading && !error && (
+        <div className="space-y-4">
+          <div>
+            <button
+              onClick={() => setAccountSectionOpen((v) => !v)}
+              className="w-full flex items-center gap-1.5 mb-2 text-left"
+            >
+              {accountSectionOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">By Account{accounts.length > 0 ? ` (${accounts.length})` : ""}</h4>
+            </button>
+            {accountSectionOpen && (accounts.length === 0 ? (
+              <div className="text-muted-foreground text-xs py-4 text-center border border-border rounded-lg">No account-level breakdown for this check</div>
+            ) : (
+              <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
+                {accounts.map((acc) => {
+                  const isOpen = openAccounts.has(acc.key)
+                  const chartData = isOpen
+                    ? buildChartData(acc.rows, () => "value")
+                        .map((point, i) => ({ ...point, min: acc.rows[i]?.thresholdMin ?? null, max: acc.rows[i]?.thresholdMax ?? null }))
+                    : []
+                  return (
+                    <div key={acc.key}>
+                      <button
+                        onClick={() => toggleAccount(acc.key)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30 transition-colors text-left"
+                      >
+                        {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                        <span className="font-medium">{acc.label}</span>
+                        <span className="text-muted-foreground ml-auto shrink-0">{formatTick(sumMetric(acc.rows))} total · {acc.rows.length} results</span>
+                      </button>
+                      {isOpen && (
+                        <div className="px-3 pb-3">
+                          {chartData.length > 0 ? (
+                            <SeriesChart
+                              data={chartData}
+                              series={[
+                                { key: "value", color: CHART_COLORS[0], showLabel: true, colorByThreshold: true },
+                                { key: "min", color: "#94a3b8", dashed: true },
+                                { key: "max", color: "#94a3b8", dashed: true },
+                              ]}
+                            />
+                          ) : (
+                            <div className="text-muted-foreground text-xs py-4 text-center">No values in selected date range</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
+            ))}
+          </div>
+
+          <div>
+            <button
+              onClick={() => setClientSectionOpen((v) => !v)}
+              className="w-full flex items-center gap-1.5 mb-2 text-left"
+            >
+              {clientSectionOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">By Client{clients.length > 0 ? ` (${clients.length})` : ""}</h4>
+            </button>
+            {clientSectionOpen && (clients.length === 0 ? (
+              <div className="text-muted-foreground text-xs py-4 text-center border border-border rounded-lg">No client-level breakdown for this check</div>
+            ) : (
+              <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
+                {clients.map((client) => {
+                  const isOpen = openClients.has(client.key)
+                  const chartData = isOpen
+                    ? (() => {
+                        const byDate: Record<string, Record<string, number | null>> = {}
+                        for (const acc of client.accounts) {
+                          for (const r of acc.rows) {
+                            if (!r.checkDate || r.metricValue == null) continue
+                            if (!byDate[r.checkDate]) byDate[r.checkDate] = {}
+                            byDate[r.checkDate][acc.label] = r.metricValue
+                          }
+                        }
+                        return Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, series]) => ({ date, ...series }))
+                      })()
+                    : []
+                  const seriesKeys = client.accounts.map((a) => a.label)
+                  return (
+                    <div key={client.key}>
+                      <button
+                        onClick={() => toggleClient(client.key)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30 transition-colors text-left"
+                      >
+                        {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                        <span className="font-medium">{client.label}</span>
+                        <span className="text-muted-foreground ml-auto shrink-0">
+                          {formatTick(client.totalSpend)} total · {client.accounts.length} account{client.accounts.length !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="px-3 pb-3">
+                          {chartData.length > 0 ? (
+                            <SeriesChart data={chartData} series={seriesKeys.map((k) => ({ key: k }))} />
+                          ) : (
+                            <div className="text-muted-foreground text-xs py-4 text-center">No values in selected date range</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

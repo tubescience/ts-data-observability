@@ -10,3 +10,4 @@ node_modules
 .vercel
 snowflake-key.p8
 *.log
+monitor_classification_query.sql
