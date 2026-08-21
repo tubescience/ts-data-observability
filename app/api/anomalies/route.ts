@@ -35,13 +35,21 @@ export async function GET(request: NextRequest) {
         r.RESULT_ID, r.CHECK_TYPE, r.TARGET_TABLE, r.GROUP_VALUE, r.SEVERITY,
         r.METRIC_VALUE, r.THRESHOLD, r.DETAILS, c.MONITOR_ID,
         CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST,
-        n.name AS GROUP_NAME
+        n.name AS GROUP_NAME,
+        i.INCIDENT_ID, i.STATUS AS INCIDENT_STATUS,
+        (i.INCIDENT_ID IS NULL AND r.CHECK_TIMESTAMP < DATEADD('HOUR', -2, CURRENT_TIMESTAMP())) AS IS_STALE_ORPHAN
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS r
       JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG c ON r.CONFIG_ID = c.CONFIG_ID
       LEFT JOIN names n ON n.id = r.GROUP_VALUE::VARCHAR AND n.check_type = r.CHECK_TYPE
+      LEFT JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS i
+        ON i.CHECK_TYPE = r.CHECK_TYPE
+        AND i.TARGET_TABLE = r.TARGET_TABLE
+        AND i.GROUP_VALUE = r.GROUP_VALUE
+        AND r.CHECK_TIMESTAMP BETWEEN i.FIRST_SEEN AND i.LAST_SEEN
       WHERE r.STATUS = 'ANOMALY'
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE >= '${dateStart}'
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE <= '${dateEnd}'
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY r.RESULT_ID ORDER BY i.FIRST_SEEN DESC NULLS LAST) = 1
       ORDER BY r.CHECK_TIMESTAMP DESC
     `)
 
@@ -57,6 +65,12 @@ export async function GET(request: NextRequest) {
       details: r.DETAILS,
       monitorId: r.MONITOR_ID ?? null,
       checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
+      incidentId: r.INCIDENT_ID ?? null,
+      isResolved: r.INCIDENT_STATUS === "RESOLVED",
+      // No incident was ever opened for this result AND it's old enough that a later sync
+      // cycle would already have picked it up if it were still failing -- i.e. a transient
+      // blip that self-corrected before SYNC_INCIDENTS' latest-per-key logic ever saw it.
+      isStaleOrphan: r.IS_STALE_ORPHAN === true,
     }))
 
     return Response.json(anomalies)

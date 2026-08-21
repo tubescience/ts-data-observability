@@ -46,7 +46,7 @@ export function DashboardView() {
   const pieData = [
     { name: "Passed", value: data.passed, color: "#22c55e" },
     { name: "Failed", value: data.failed, color: "#ef4444" },
-    { name: "Anomalies", value: data.anomalies, color: "#eab308" },
+    { name: "Open Anomalies", value: data.anomalies, color: "#eab308" },
   ].filter((d) => d.value > 0)
 
   const failingChecks = (data.checkTypeBreakdown ?? []).filter((c) => c.fail > 0).slice(0, 10)
@@ -59,7 +59,7 @@ export function DashboardView() {
         <MetricCard icon={<ShieldCheck className="w-5 h-5" />} label="Health Score" value={`${data.healthScore}%`} valueColor={scoreColor} />
         <MetricCard icon={<CheckCircle className="w-5 h-5 text-green-500" />} label="Passed" value={data.passed.toLocaleString()} />
         <MetricCard icon={<XCircle className="w-5 h-5 text-red-500" />} label="Failed" value={data.failed.toLocaleString()} />
-        <MetricCard icon={<AlertTriangle className="w-5 h-5 text-yellow-500" />} label="Anomalies" value={data.anomalies.toLocaleString()} />
+        <MetricCard icon={<AlertTriangle className="w-5 h-5 text-yellow-500" />} label="Open Anomalies" value={data.anomalies.toLocaleString()} />
         <MetricCard icon={<Activity className="w-5 h-5 text-orange-500" />} label="Open Incidents" value={data.openIncidents.toLocaleString()} />
         <MetricCard icon={<Clock className="w-5 h-5 text-blue-500" />} label="Resolved Today" value={data.resolvedToday.toLocaleString()} />
       </div>

@@ -5,7 +5,7 @@ export async function GET() {
   try {
     await querySnowflake("USE ROLE MCP_MONITOR")
 
-    const [summaryRows, openRows, resolvedTodayRows, byCheckTypeRows, recentTrendRows] = await Promise.all([
+    const [summaryRows, openRows, openAnomaliesRows, resolvedTodayRows, byCheckTypeRows, recentTrendRows] = await Promise.all([
       querySnowflake(`
         SELECT STATUS, COUNT(*) as CNT
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS
@@ -14,6 +14,25 @@ export async function GET() {
       `),
       querySnowflake(`
         SELECT COUNT(*) as CNT FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS WHERE STATUS = 'OPEN'
+      `),
+      // Same "open" definition as the Anomalies tab's default view: exclude anomalies whose
+      // incident was already resolved, and exclude stale orphans (no incident ever opened,
+      // and old enough that a self-correction is why none exists).
+      querySnowflake(`
+        SELECT COUNT(*) as CNT FROM (
+          SELECT r.RESULT_ID, i.STATUS AS INCIDENT_STATUS,
+            (i.INCIDENT_ID IS NULL AND r.CHECK_TIMESTAMP < DATEADD('HOUR', -2, CURRENT_TIMESTAMP())) AS IS_STALE_ORPHAN
+          FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS r
+          LEFT JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS i
+            ON i.CHECK_TYPE = r.CHECK_TYPE
+            AND i.TARGET_TABLE = r.TARGET_TABLE
+            AND i.GROUP_VALUE = r.GROUP_VALUE
+            AND r.CHECK_TIMESTAMP BETWEEN i.FIRST_SEEN AND i.LAST_SEEN
+          WHERE r.STATUS = 'ANOMALY'
+            AND r.CHECK_TIMESTAMP >= CONVERT_TIMEZONE('America/Los_Angeles', CURRENT_TIMESTAMP())::DATE
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY r.RESULT_ID ORDER BY i.FIRST_SEEN DESC NULLS LAST) = 1
+        )
+        WHERE NOT IS_STALE_ORPHAN AND COALESCE(INCIDENT_STATUS, 'OPEN') != 'RESOLVED'
       `),
       querySnowflake(`
         SELECT COUNT(*) as CNT FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS
@@ -47,8 +66,9 @@ export async function GET() {
 
     const passed = summary["PASS"] || 0
     const failed = (summary["FAIL"] || 0) + (summary["ERROR"] || 0)
-    const anomalies = summary["ANOMALY"] || 0
-    const total = passed + failed + anomalies
+    const anomaliesRaw = summary["ANOMALY"] || 0
+    const openAnomalies = openAnomaliesRows[0]?.CNT || 0
+    const total = passed + failed + anomaliesRaw
     const healthScore = total > 0 ? Math.round((passed / total) * 100) : 100
 
     // Group by check type
@@ -74,7 +94,7 @@ export async function GET() {
       healthScore,
       passed,
       failed,
-      anomalies,
+      anomalies: openAnomalies,
       openIncidents: openRows[0]?.CNT || 0,
       resolvedToday: resolvedTodayRows[0]?.CNT || 0,
       checkTypeBreakdown,

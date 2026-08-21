@@ -122,6 +122,20 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
     )
   }
 
+  const validRows = rows.filter((r) => !r.error)
+  const totalOur = validRows.reduce((sum, r) => sum + (r.snowflake_spend ?? 0), 0)
+  const totalApi = validRows.reduce((sum, r) => sum + (r.platform_spend ?? 0), 0)
+  const totalDiffPct = totalApi !== 0 ? ((totalOur - totalApi) / totalApi) * 100 : null
+  const currencies = new Set(validRows.map((r) => r.currency).filter(Boolean))
+  const totalCurrency = currencies.size === 1 ? [...currencies][0] : undefined
+  const totalCloseMatch = totalDiffPct != null && Math.abs(totalDiffPct) <= 2
+  const totalDiffText = totalDiffPct != null ? `${totalDiffPct > 0 ? "+" : ""}${totalDiffPct.toFixed(2)}%` : "—"
+  const totalResolveMessage =
+    `Validated vs API: ${label} — All accounts\n` +
+    `Our data: ${formatFullQty(totalOur)}${totalCurrency ? " " + totalCurrency : ""}  ` +
+    `API: ${formatFullQty(totalApi)}${totalCurrency ? " " + totalCurrency : ""}  ` +
+    `Diff: ${totalDiffText}`
+
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <div className="px-3 py-2 bg-muted/50 text-xs font-semibold">{label}</div>
@@ -199,6 +213,44 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
             )
           })}
         </tbody>
+        {rows.length > 1 && (
+          <tfoot>
+            <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+              <td className="px-3 py-2 text-xs">Total ({validRows.length} account{validRows.length !== 1 ? "s" : ""})</td>
+              <td className="px-3 py-2 text-right font-mono text-xs">
+                {formatTick(totalOur)}
+                {totalCurrency && <span className="text-muted-foreground ml-1 font-normal">{totalCurrency}</span>}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-xs">
+                {formatTick(totalApi)}
+                {totalCurrency && <span className="text-muted-foreground ml-1 font-normal">{totalCurrency}</span>}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-xs">
+                <span className={totalCloseMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                  {totalDiffPct != null ? `${totalDiffPct > 0 ? "+" : ""}${totalDiffPct.toFixed(1)}%` : "—"}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-right">
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(totalResolveMessage)}
+                    className="p-1.5 text-muted-foreground hover:text-foreground border border-border rounded hover:bg-accent transition-colors"
+                    title="Copy total validation summary"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onUseInResolve(totalResolveMessage)}
+                    className="px-2 py-1 text-xs font-medium border border-border rounded hover:bg-accent transition-colors whitespace-nowrap"
+                    title="Insert total into the Resolve Incident message box"
+                  >
+                    Use in Resolve
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
+        )}
       </table>
       <div className="px-3 py-2 bg-muted/20 text-xs text-muted-foreground">
         Spend shown in each account&apos;s native currency, not USD — small diffs can be normal timing/rounding.

@@ -44,6 +44,7 @@ interface IncidentGroup {
   checkType: string
   groupValue: string | null
   groupName: string | null
+  targetTable: string | null
   incidents: Incident[]
 }
 
@@ -177,7 +178,17 @@ export function OpenIncidents() {
       const key = isEntityGroup ? `${inc.checkType}::${inc.groupValue}` : `${inc.checkType}::notarget::${inc.targetTable}`
       let g = groupMap.get(key)
       if (!g) {
-        g = { key, checkType: inc.checkType, groupValue: inc.groupValue, groupName: inc.groupName, incidents: [] }
+        // Non-entity groups are bucketed by target table, not by groupValue — a single
+        // group can span several platform codes (APLVN, TIK, YT...) sharing that table.
+        // Showing one incident's groupValue as the group label would misrepresent the rest.
+        g = {
+          key,
+          checkType: inc.checkType,
+          groupValue: isEntityGroup ? inc.groupValue : null,
+          groupName: isEntityGroup ? inc.groupName : null,
+          targetTable: isEntityGroup ? null : inc.targetTable,
+          incidents: [],
+        }
         groupMap.set(key, g)
         groups.push(g)
       }
@@ -399,10 +410,18 @@ export function OpenIncidents() {
                 <span className="text-sm font-medium truncate">
                   {group.groupValue ? (
                     group.groupName ? <>{group.groupName} <span className="text-muted-foreground font-normal">({group.groupValue})</span></> : group.groupValue
+                  ) : group.targetTable ? (
+                    <span className="break-all">{group.targetTable}</span>
                   ) : (
                     <span className="text-muted-foreground font-normal">No Group</span>
                   )}
                 </span>
+                {(() => {
+                  const groupTags = [...new Set(group.incidents.flatMap((i) => i.tags))]
+                  return groupTags.length > 0 ? (
+                    <TagBadges tags={groupTags} colorMap={tagColors} />
+                  ) : null
+                })()}
                 <span className="text-xs text-muted-foreground ml-auto shrink-0">
                   {group.incidents.length} incident{group.incidents.length !== 1 ? "s" : ""}
                 </span>

@@ -20,6 +20,9 @@ interface Anomaly {
   details: Record<string, any> | null
   monitorId: number | null
   checkTimestamp: string | null
+  incidentId: number | null
+  isResolved: boolean
+  isStaleOrphan: boolean
 }
 
 function getPSTDateOffset(days: number): string {
@@ -134,6 +137,7 @@ export function AnomaliesView() {
   const [severityFilter, setSeverityFilter] = useState("")
   const [targetFilter, setTargetFilter] = useState("")
   const [groupFilter, setGroupFilter] = useState("")
+  const [hideResolved, setHideResolved] = useState(true)
   const [viewing, setViewing] = useState<Anomaly | null>(null)
   const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
 
@@ -146,7 +150,11 @@ export function AnomaliesView() {
   const checkTypes = [...new Set(allAnomalies.map((a) => a.checkType))].sort()
   const severities = [...new Set(allAnomalies.map((a) => a.severity))].sort()
 
+  const resolvedCount = allAnomalies.filter((a) => a.isResolved).length
+  const staleOrphanCount = allAnomalies.filter((a) => a.isStaleOrphan).length
+
   const anomalies = allAnomalies.filter((a) => {
+    if (hideResolved && (a.isResolved || a.isStaleOrphan)) return false
     if (checkTypeFilter && a.checkType !== checkTypeFilter) return false
     if (severityFilter && a.severity !== severityFilter) return false
     if (targetFilter && !a.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
@@ -164,7 +172,24 @@ export function AnomaliesView() {
     {
       key: "severity",
       label: "Severity",
-      render: (_, row) => <SeverityBadge severity={row.severity} />,
+      render: (_, row) => (
+        <div className="flex items-center gap-1.5">
+          <SeverityBadge severity={row.severity} />
+          {(row as any).isResolved && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-600 dark:text-green-400 whitespace-nowrap">
+              Resolved
+            </span>
+          )}
+          {(row as any).isStaleOrphan && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap"
+              title="No incident was ever opened for this result -- it self-corrected before the next incident sync cycle"
+            >
+              Self-corrected
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: "checkType",
@@ -214,7 +239,14 @@ export function AnomaliesView() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl sm:text-2xl font-semibold">Anomalies ({anomalies.length})</h2>
+        <h2 className="text-xl sm:text-2xl font-semibold">
+          Anomalies ({anomalies.length})
+          {(resolvedCount > 0 || staleOrphanCount > 0) && (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {resolvedCount} resolved, {staleOrphanCount} self-corrected {hideResolved ? "hidden" : "shown"}
+            </span>
+          )}
+        </h2>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-3 items-center">
@@ -264,6 +296,15 @@ export function AnomaliesView() {
           placeholder="Search group..."
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-36"
         />
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground whitespace-nowrap px-1">
+          <input
+            type="checkbox"
+            checked={hideResolved}
+            onChange={(e) => setHideResolved(e.target.checked)}
+            className="rounded border-input"
+          />
+          Hide resolved
+        </label>
       </div>
 
       {isLoading && <div className="text-muted-foreground">Loading anomalies...</div>}
