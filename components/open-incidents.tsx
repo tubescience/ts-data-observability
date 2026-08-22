@@ -9,6 +9,7 @@ import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
 import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/suggested-resolution-popup"
 import { LIVE_SPEND_CHECK_TYPES, useLiveSpendCheck, LiveSpendPopup } from "@/components/live-spend-check"
 import { ML_FORECAST_CHECK_TYPES, useMlForecastCheck, MlForecastPopup } from "@/components/ml-forecast-check"
+import { useValidateIncidentCheck, ValidateIncidentPopup } from "@/components/validate-incident-check"
 import { ResolvedIncidents } from "@/components/resolved-incidents"
 import { AnomaliesView } from "@/components/anomalies-view"
 import { SeverityBadge } from "@/components/severity-badge"
@@ -88,6 +89,7 @@ export function OpenIncidents() {
   const queryClient = useQueryClient()
   const liveSpend = useLiveSpendCheck()
   const mlForecast = useMlForecastCheck()
+  const validateIncident = useValidateIncidentCheck()
 
   const { data, isLoading, error } = useQuery<Incident[]>({
     queryKey: ["incidents-open"],
@@ -284,6 +286,13 @@ export function OpenIncidents() {
             <Lightbulb className="w-3.5 h-3.5" />
           </button>
           <button
+            onClick={(e) => { e.stopPropagation(); validateIncident.runValidateIncidentCheck((row as any).incidentId) }}
+            className="px-2 py-1 text-xs font-medium border border-border rounded hover:bg-accent transition-colors min-h-[32px]"
+            title="Run VALIDATE_INCIDENT"
+          >
+            Validate
+          </button>
+          <button
             onClick={(e) => { e.stopPropagation(); setResolving(row) }}
             className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors min-h-[32px]"
           >
@@ -425,6 +434,15 @@ export function OpenIncidents() {
                 <span className="text-xs text-muted-foreground ml-auto shrink-0">
                   {group.incidents.length} incident{group.incidents.length !== 1 ? "s" : ""}
                 </span>
+                {isSingle && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); validateIncident.runValidateIncidentCheck(group.incidents[0].incidentId) }}
+                    className="px-2 py-1 text-xs font-medium border border-border rounded hover:bg-accent transition-colors shrink-0"
+                    title="Run VALIDATE_INCIDENT"
+                  >
+                    Validate
+                  </button>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); isSingle ? setResolving(group.incidents[0]) : setResolvingGroup(group) }}
                   className="px-2 py-1 text-xs font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors shrink-0"
@@ -704,6 +722,15 @@ export function OpenIncidents() {
             if (mlForecastOrigin === "group") setGroupNotes(text)
             else setNotes(text)
           }}
+        />
+      )}
+
+      {validateIncident.showValidatePopup && (
+        <ValidateIncidentPopup
+          loading={validateIncident.checkingValidate}
+          error={validateIncident.validateError}
+          rows={validateIncident.validateRows}
+          onClose={() => validateIncident.setShowValidatePopup(false)}
         />
       )}
     </div>
