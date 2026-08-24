@@ -37,6 +37,7 @@ export interface LiveSpendTarget {
   checkType: string
   targetTable: string
   groupValue: string | null
+  createdAt: string | null
 }
 
 // Encapsulates the fetch + popup-visibility state so both Incident Detail
@@ -60,6 +61,7 @@ export function useLiveSpendCheck() {
           checkType: target.checkType,
           targetTable: target.targetTable,
           groupValue: target.groupValue,
+          createdAt: target.createdAt,
         }),
       })
       const json = await res.json()

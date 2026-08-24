@@ -33,6 +33,7 @@ export async function GET() {
         i.SUGGESTED_RESOLUTION, i.SUGGESTED_RESOLUTION_REASON,
         CONVERT_TIMEZONE('America/Los_Angeles', i.FIRST_SEEN) as FIRST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.LAST_SEEN) as LAST_SEEN_PST,
+        CONVERT_TIMEZONE('America/Los_Angeles', i.CREATED_AT) as CREATED_AT_PST,
         n.name AS GROUP_NAME,
         m.TAGS
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS i
@@ -61,6 +62,7 @@ export async function GET() {
       suggestedResolutionReason: r.SUGGESTED_RESOLUTION_REASON || null,
       firstSeen: toIso(r.FIRST_SEEN_PST),
       lastSeen: toIso(r.LAST_SEEN_PST),
+      createdAt: toIso(r.CREATED_AT_PST),
       tags: r.TAGS ? r.TAGS.split(",").map((t: string) => t.trim()).filter(Boolean) : [],
     }))
 

@@ -40,6 +40,7 @@ interface Incident {
   suggestedResolutionReason: string | null
   firstSeen: string | null
   lastSeen: string | null
+  createdAt: string | null
 }
 
 interface IncidentDetailProps {

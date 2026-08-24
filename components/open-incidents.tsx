@@ -34,6 +34,7 @@ interface Incident {
   suggestedResolutionReason: string | null
   firstSeen: string | null
   lastSeen: string | null
+  createdAt: string | null
 }
 
 function getPSTDateOffset(days: number): string {
@@ -660,7 +661,7 @@ export function OpenIncidents() {
               <div className="flex flex-col-reverse sm:flex-row gap-2 sm:mr-auto">
                 {LIVE_SPEND_CHECK_TYPES.has(resolvingGroup.checkType) && resolvingGroup.groupValue && (
                   <button
-                    onClick={() => { setLiveSpendOrigin("group"); liveSpend.runLiveSpendCheck({ checkType: resolvingGroup.checkType, targetTable: resolvingGroup.incidents[0].targetTable, groupValue: resolvingGroup.groupValue }) }}
+                    onClick={() => { setLiveSpendOrigin("group"); liveSpend.runLiveSpendCheck({ checkType: resolvingGroup.checkType, targetTable: resolvingGroup.incidents[0].targetTable, groupValue: resolvingGroup.groupValue, createdAt: resolvingGroup.incidents[0].createdAt }) }}
                     disabled={liveSpend.checkingLiveSpend}
                     className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >

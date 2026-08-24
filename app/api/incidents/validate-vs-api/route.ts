@@ -41,25 +41,46 @@ function platformFromTable(targetTable: string): string | null {
 // from explicit UTC arithmetic (Date.UTC/setUTCDate/getUTCDate), not `new Date("YYYY-MM-DDT00:00:00")`
 // (which parses as the *server's local timezone*, silently wrong by a day whenever
 // that's not UTC or PST/PDT itself -- confirmed by testing under TZ=Asia/Tokyo).
-function yesterdayPST(): string {
-  const todayPST = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
-  const [y, m, d] = todayPST.split("-").map(Number)
+// The PST calendar date immediately before the given instant's PST calendar date.
+// Built entirely from explicit UTC arithmetic (Date.UTC/setUTCDate/getUTCDate), not
+// `new Date("YYYY-MM-DDT00:00:00")` (which parses as the *server's local timezone*,
+// silently wrong by a day whenever that's not UTC or PST/PDT itself -- confirmed by
+// testing under TZ=Asia/Tokyo).
+function pstDateMinusOne(instant: Date): string {
+  const datePST = instant.toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+  const [y, m, d] = datePST.split("-").map(Number)
   const utcDate = new Date(Date.UTC(y, m - 1, d))
   utcDate.setUTCDate(utcDate.getUTCDate() - 1)
   return utcDate.toISOString().slice(0, 10)
 }
 
+function yesterdayPST(): string {
+  return pstDateMinusOne(new Date())
+}
+
+// The check that raised this incident always evaluates the PREVIOUS day's spend
+// relative to when it ran (e.g. a check that fires today is judging yesterday's
+// numbers) -- so the comparison date is one day before the incident's own creation
+// date, not the creation date itself. CONVERT_TIMEZONE on the way out of Snowflake
+// attaches the LA offset to the timestamp string, so `new Date(iso)` already
+// resolves to the correct instant here.
+function spendDateFromIncidentCreatedAt(iso: string): string | null {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return pstDateMinusOne(d)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { checkType, targetTable, groupValue } = body
+    const { checkType, targetTable, groupValue, createdAt } = body
 
     if (!checkType || !groupValue) {
       return Response.json({ error: "checkType and groupValue are required" }, { status: 400 })
     }
 
     const isClientCheck = checkType === "SPEND_CLIENT" || checkType === "SRC_SPEND_CLIENT"
-    const date = yesterdayPST()
+    const date = (createdAt && spendDateFromIncidentCreatedAt(createdAt)) || yesterdayPST()
     const escapedGroup = String(groupValue).replace(/'/g, "''")
 
     try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
