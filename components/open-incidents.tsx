@@ -9,7 +9,7 @@ import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
 import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/suggested-resolution-popup"
 import { LIVE_SPEND_CHECK_TYPES, useLiveSpendCheck, LiveSpendPopup } from "@/components/live-spend-check"
 import { ML_FORECAST_CHECK_TYPES, useMlForecastCheck, MlForecastPopup } from "@/components/ml-forecast-check"
-import { useValidateIncidentCheck, ValidateIncidentPopup } from "@/components/validate-incident-check"
+import { useValidateIncidentCheck, ValidateIncidentToasts } from "@/components/validate-incident-check"
 import { ResolvedIncidents } from "@/components/resolved-incidents"
 import { AnomaliesView } from "@/components/anomalies-view"
 import { SeverityBadge } from "@/components/severity-badge"
@@ -30,6 +30,8 @@ interface Incident {
   failureCount: number
   lastMetric: number | null
   lastThreshold: number | null
+  thresholdMin: number | null
+  thresholdMax: number | null
   suggestedResolution: string | null
   suggestedResolutionReason: string | null
   firstSeen: string | null
@@ -550,8 +552,12 @@ export function OpenIncidents() {
                   <span className="text-muted-foreground">Last Value:</span>{" "}
                   <span className="font-mono">{resolving.lastMetric != null ? formatTick(resolving.lastMetric) : "—"}</span>
                   {" · "}
-                  <span className="text-muted-foreground">Threshold:</span>{" "}
-                  <span className="font-mono">{resolving.lastThreshold != null ? formatTick(resolving.lastThreshold) : "—"}</span>
+                  <span className="text-muted-foreground">{resolving.thresholdMin != null ? "Min / Max:" : "Threshold:"}</span>{" "}
+                  <span className="font-mono">
+                    {resolving.thresholdMin != null && resolving.thresholdMax != null
+                      ? `${formatTick(resolving.thresholdMin)} – ${formatTick(resolving.thresholdMax)}`
+                      : resolving.lastThreshold != null ? formatTick(resolving.lastThreshold) : "—"}
+                  </span>
                 </div>
               </div>
               <div>
@@ -632,7 +638,7 @@ export function OpenIncidents() {
                     <tr>
                       <th className="text-left px-3 py-1.5 font-medium">Target</th>
                       <th className="text-left px-3 py-1.5 font-medium">Last Value</th>
-                      <th className="text-left px-3 py-1.5 font-medium">Threshold</th>
+                      <th className="text-left px-3 py-1.5 font-medium">Min / Max</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -640,7 +646,11 @@ export function OpenIncidents() {
                       <tr key={i.incidentId}>
                         <td className="px-3 py-1.5 break-all">{i.targetTable}</td>
                         <td className="px-3 py-1.5 font-mono">{i.lastMetric != null ? formatTick(i.lastMetric) : "—"}</td>
-                        <td className="px-3 py-1.5 font-mono text-muted-foreground">{i.lastThreshold != null ? formatTick(i.lastThreshold) : "—"}</td>
+                        <td className="px-3 py-1.5 font-mono text-muted-foreground">
+                          {i.thresholdMin != null && i.thresholdMax != null
+                            ? `${formatTick(i.thresholdMin)} – ${formatTick(i.thresholdMax)}`
+                            : i.lastThreshold != null ? formatTick(i.lastThreshold) : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -703,6 +713,7 @@ export function OpenIncidents() {
           loading={liveSpend.checkingLiveSpend}
           error={liveSpend.liveSpendError}
           result={liveSpend.liveSpendResult}
+          checkType={liveSpend.liveSpendCheckType}
           onClose={() => liveSpend.setShowLiveSpendPopup(false)}
           onUseInResolve={(text) => {
             liveSpend.setShowLiveSpendPopup(false)
@@ -726,14 +737,7 @@ export function OpenIncidents() {
         />
       )}
 
-      {validateIncident.showValidatePopup && (
-        <ValidateIncidentPopup
-          loading={validateIncident.checkingValidate}
-          error={validateIncident.validateError}
-          rows={validateIncident.validateRows}
-          onClose={() => validateIncident.setShowValidatePopup(false)}
-        />
-      )}
+      <ValidateIncidentToasts toasts={validateIncident.toasts} onDismiss={validateIncident.dismissValidateToast} />
     </div>
   )
 }

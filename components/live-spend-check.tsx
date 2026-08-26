@@ -31,6 +31,12 @@ interface LiveSpendPlatformResult {
   status?: string
   message?: string
   rows?: LiveSpendRow[]
+  // Client-level checks compare two internal reporting layers instead of a live
+  // platform API -- these override the generic "Our Data"/"Live API" labels and
+  // footer note so the table doesn't misrepresent what's actually being compared.
+  ourLabel?: string
+  compareLabel?: string
+  note?: string
 }
 
 export interface LiveSpendTarget {
@@ -47,12 +53,14 @@ export function useLiveSpendCheck() {
   const [liveSpendResult, setLiveSpendResult] = useState<{ date: string; results: LiveSpendPlatformResult[] } | null>(null)
   const [liveSpendError, setLiveSpendError] = useState("")
   const [showLiveSpendPopup, setShowLiveSpendPopup] = useState(false)
+  const [liveSpendCheckType, setLiveSpendCheckType] = useState("")
 
   const runLiveSpendCheck = async (target: LiveSpendTarget) => {
     setShowLiveSpendPopup(true)
     setCheckingLiveSpend(true)
     setLiveSpendResult(null)
     setLiveSpendError("")
+    setLiveSpendCheckType(target.checkType)
     try {
       const res = await fetch("/api/incidents/validate-vs-api", {
         method: "POST",
@@ -83,6 +91,7 @@ export function useLiveSpendCheck() {
     liveSpendError,
     showLiveSpendPopup,
     setShowLiveSpendPopup,
+    liveSpendCheckType,
     runLiveSpendCheck,
   }
 }
@@ -100,6 +109,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   snapchat: "Snapchat",
   pinterest: "Pinterest",
   applovin: "AppLovin",
+  reporting: "Client Spend (Reporting Comparison)",
 }
 
 function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendPlatformResult; onUseInResolve: (text: string) => void }) {
@@ -124,6 +134,9 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
     )
   }
 
+  const ourLabel = result.ourLabel || "Our Data"
+  const compareLabel = result.compareLabel || "Live API"
+
   const validRows = rows.filter((r) => !r.error)
   const totalOur = validRows.reduce((sum, r) => sum + (r.snowflake_spend ?? 0), 0)
   const totalApi = validRows.reduce((sum, r) => sum + (r.platform_spend ?? 0), 0)
@@ -133,9 +146,9 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
   const totalCloseMatch = totalDiffPct != null && Math.abs(totalDiffPct) <= 2
   const totalDiffText = totalDiffPct != null ? `${totalDiffPct > 0 ? "+" : ""}${totalDiffPct.toFixed(2)}%` : "—"
   const totalResolveMessage =
-    `Validated vs API: ${label} — All accounts\n` +
-    `Our data: ${formatFullQty(totalOur)}${totalCurrency ? " " + totalCurrency : ""}  ` +
-    `API: ${formatFullQty(totalApi)}${totalCurrency ? " " + totalCurrency : ""}  ` +
+    `Validated vs ${compareLabel}: ${label} — All accounts\n` +
+    `${ourLabel}: ${formatFullQty(totalOur)}${totalCurrency ? " " + totalCurrency : ""}  ` +
+    `${compareLabel}: ${formatFullQty(totalApi)}${totalCurrency ? " " + totalCurrency : ""}  ` +
     `Diff: ${totalDiffText}`
 
   return (
@@ -145,8 +158,8 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
         <thead className="bg-muted/30">
           <tr>
             <th className="text-left px-3 py-1.5 font-medium text-xs">Account / Client</th>
-            <th className="text-right px-3 py-1.5 font-medium text-xs">Our Data</th>
-            <th className="text-right px-3 py-1.5 font-medium text-xs">Live API</th>
+            <th className="text-right px-3 py-1.5 font-medium text-xs">{ourLabel}</th>
+            <th className="text-right px-3 py-1.5 font-medium text-xs">{compareLabel}</th>
             <th className="text-right px-3 py-1.5 font-medium text-xs">Diff</th>
             <th className="text-right px-3 py-1.5 font-medium text-xs">Action</th>
           </tr>
@@ -159,9 +172,9 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
             const id = row.account_id || ""
             const diffText = row.diff_pct != null ? `${row.diff_pct > 0 ? "+" : ""}${row.diff_pct.toFixed(2)}%` : "—"
             const resolveMessage =
-              `Validated vs API: ${id} ${name}\n` +
-              `Our data: ${formatFullQty(row.snowflake_spend)}${row.currency ? " " + row.currency : ""}  ` +
-              `API: ${formatFullQty(row.platform_spend)}${row.currency ? " " + row.currency : ""}  ` +
+              `Validated vs ${compareLabel}: ${id} ${name}\n` +
+              `${ourLabel}: ${formatFullQty(row.snowflake_spend)}${row.currency ? " " + row.currency : ""}  ` +
+              `${compareLabel}: ${formatFullQty(row.platform_spend)}${row.currency ? " " + row.currency : ""}  ` +
               `Diff: ${diffText}`
             return (
               <tr key={i}>
@@ -255,25 +268,36 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
         )}
       </table>
       <div className="px-3 py-2 bg-muted/20 text-xs text-muted-foreground">
-        Spend shown in each account&apos;s native currency, not USD — small diffs can be normal timing/rounding.
+        {result.note || "Spend shown in each account's native currency, not USD — small diffs can be normal timing/rounding."}
       </div>
     </div>
   )
 }
 
+// Client checks never hit a live ad-platform API (see runClientSpendComparison
+// server-side) -- SUM_VALUE_GROUPED/DATA_RECENCY only fall back to that path for
+// incidents grouped by client, so the platform-API wording still fits them best.
+const CLIENT_CHECK_TYPES = new Set(["SPEND_CLIENT", "SRC_SPEND_CLIENT"])
+
 export function LiveSpendPopup({
   loading,
   error,
   result,
+  checkType,
   onClose,
   onUseInResolve,
 }: {
   loading: boolean
   error: string
   result: { date: string; results: LiveSpendPlatformResult[] } | null
+  checkType?: string
   onClose: () => void
   onUseInResolve: (text: string) => void
 }) {
+  const loadingMessage = checkType && CLIENT_CHECK_TYPES.has(checkType)
+    ? "Comparing TGT_ADPIP_REPORT vs MCP Reporting spend..."
+    : "Checking live spend against the platform API..."
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
       <div
@@ -298,7 +322,7 @@ export function LiveSpendPopup({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Checking live spend against the platform API...
+              {loadingMessage}
             </div>
           )}
           {error && <div className="text-destructive text-sm text-center py-4">{error}</div>}

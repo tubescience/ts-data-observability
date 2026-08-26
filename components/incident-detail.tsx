@@ -16,6 +16,8 @@ interface HistoryPoint {
   status: string
   metricValue: number | null
   threshold: number | null
+  thresholdMin: number | null
+  thresholdMax: number | null
   groupValue: string | null
   details: string | null
   checkDate: string | null
@@ -36,6 +38,8 @@ interface Incident {
   failureCount: number
   lastMetric: number | null
   lastThreshold: number | null
+  thresholdMin: number | null
+  thresholdMax: number | null
   suggestedResolution: string | null
   suggestedResolutionReason: string | null
   firstSeen: string | null
@@ -164,8 +168,12 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             <p className="font-mono text-xs mt-0.5">{incident.lastMetric != null ? formatTick(incident.lastMetric) : "—"}</p>
           </div>
           <div>
-            <span className="text-muted-foreground text-xs">Threshold</span>
-            <p className="font-mono text-xs mt-0.5">{incident.lastThreshold != null ? formatTick(incident.lastThreshold) : "—"}</p>
+            <span className="text-muted-foreground text-xs">{incident.thresholdMin != null ? "Min / Max" : "Threshold"}</span>
+            <p className="font-mono text-xs mt-0.5">
+              {incident.thresholdMin != null && incident.thresholdMax != null
+                ? `${formatTick(incident.thresholdMin)} – ${formatTick(incident.thresholdMax)}`
+                : incident.lastThreshold != null ? formatTick(incident.lastThreshold) : "—"}
+            </p>
           </div>
           <div>
             <span className="text-muted-foreground text-xs">First Seen</span>
@@ -242,7 +250,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
                       <th className="text-left px-3 py-2 font-medium">Date</th>
                       <th className="text-left px-3 py-2 font-medium">Status</th>
                       <th className="text-left px-3 py-2 font-medium">Value</th>
-                      <th className="text-left px-3 py-2 font-medium">Threshold</th>
+                      <th className="text-left px-3 py-2 font-medium">Min / Max</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -259,7 +267,11 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
                           </span>
                         </td>
                         <td className="px-3 py-2 font-mono text-xs">{r.metricValue != null ? formatTick(r.metricValue) : "—"}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{r.threshold != null ? formatTick(r.threshold) : "—"}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {r.thresholdMin != null && r.thresholdMax != null
+                            ? `${formatTick(r.thresholdMin)} – ${formatTick(r.thresholdMax)}`
+                            : r.threshold != null ? formatTick(r.threshold) : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -366,6 +378,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             loading={liveSpend.checkingLiveSpend}
             error={liveSpend.liveSpendError}
             result={liveSpend.liveSpendResult}
+            checkType={liveSpend.liveSpendCheckType}
             onClose={() => liveSpend.setShowLiveSpendPopup(false)}
             onUseInResolve={(text) => {
               liveSpend.setShowLiveSpendPopup(false)

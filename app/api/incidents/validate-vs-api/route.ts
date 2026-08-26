@@ -37,10 +37,61 @@ function platformFromTable(targetTable: string): string | null {
   return null
 }
 
-// "Yesterday" in PST — the single day these checks compare against. Built entirely
-// from explicit UTC arithmetic (Date.UTC/setUTCDate/getUTCDate), not `new Date("YYYY-MM-DDT00:00:00")`
-// (which parses as the *server's local timezone*, silently wrong by a day whenever
-// that's not UTC or PST/PDT itself -- confirmed by testing under TZ=Asia/Tokyo).
+// Client-level checks don't validate against a live ad-platform API (a client is a
+// cross-platform aggregate, not something any single platform API can confirm) --
+// instead compare the two internal reporting layers the client total is actually
+// built from. Uses SPEND_USD, not native SPEND: a client's accounts can span
+// multiple currencies (verified), so summing native amounts across them would be
+// meaningless. Returns null if neither layer has any row for this client/date, so
+// the caller can fall back to its own "nothing found" handling.
+async function runClientSpendComparison(clientId: number, date: string) {
+  const [tgtRows, mcpRows] = await Promise.all([
+    querySnowflake(
+      `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
+       FROM TS_PROD_DB.TGT_ADPIP_REPORT.V_SPEND_DAILY
+       WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
+       GROUP BY CLIENT_ID`
+    ),
+    querySnowflake(
+      `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
+       FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY
+       WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
+       GROUP BY CLIENT_ID`
+    ),
+  ])
+
+  if (tgtRows.length === 0 && mcpRows.length === 0) return null
+
+  const tgtSpend = tgtRows[0]?.SPEND ?? 0
+  const mcpSpend = mcpRows[0]?.SPEND ?? 0
+  const clientName = tgtRows[0]?.CLIENT_NAME || mcpRows[0]?.CLIENT_NAME || null
+  const diff = tgtSpend - mcpSpend
+  const diffPct = mcpSpend !== 0 ? (diff / mcpSpend) * 100 : null
+
+  return {
+    date,
+    results: [
+      {
+        platform: "reporting",
+        ourLabel: "TGT_ADPIP_REPORT",
+        compareLabel: "MCP REPORTING",
+        note: "Both sides are internal V_SPEND_DAILY layers in USD -- not a live platform API. A client spans multiple ad accounts (and can span multiple currencies), so this compares the two reporting layers the client total is built from rather than any single platform's API.",
+        rows: [
+          {
+            account_id: String(clientId),
+            account_name: clientName,
+            currency: "USD",
+            snowflake_spend: tgtSpend,
+            platform_spend: mcpSpend,
+            diff,
+            diff_pct: diffPct,
+          },
+        ],
+      },
+    ],
+  }
+}
+
 // The PST calendar date immediately before the given instant's PST calendar date.
 // Built entirely from explicit UTC arithmetic (Date.UTC/setUTCDate/getUTCDate), not
 // `new Date("YYYY-MM-DDT00:00:00")` (which parses as the *server's local timezone*,
@@ -79,11 +130,29 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "checkType and groupValue are required" }, { status: 400 })
     }
 
-    const isClientCheck = checkType === "SPEND_CLIENT" || checkType === "SRC_SPEND_CLIENT"
+    const isExplicitClientCheck = checkType === "SPEND_CLIENT" || checkType === "SRC_SPEND_CLIENT"
+    // SUM_VALUE_GROUPED/DATA_RECENCY are ambiguous: the same monitor can have
+    // separate configs grouping by CLIENT_ID, ACCOUNT_ID, or PLATFORM, and the
+    // incident itself doesn't record which -- same ambiguity as group-name
+    // resolution. These fall back to the client comparison only if the normal
+    // account-based platform lookup below finds nothing.
+    const isAmbiguousGroupedCheck = checkType === "SUM_VALUE_GROUPED" || checkType === "DATA_RECENCY"
     const date = (createdAt && spendDateFromIncidentCreatedAt(createdAt)) || yesterdayPST()
     const escapedGroup = String(groupValue).replace(/'/g, "''")
 
     try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
+
+    if (isExplicitClientCheck) {
+      const clientId = Number(groupValue)
+      if (!Number.isFinite(clientId)) {
+        return Response.json({ error: `Invalid client id: ${groupValue}` }, { status: 400 })
+      }
+      const result = await runClientSpendComparison(clientId, date)
+      if (!result) {
+        return Response.json({ error: `No spend data found for CLIENT_ID ${groupValue} on ${date}` }, { status: 400 })
+      }
+      return Response.json(result)
+    }
 
     // Resolve which platform(s) to check, and whether GROUP_VALUE is itself an
     // account/client, or the whole-platform code (e.g. monitor 1107's SUM_VALUE_GROUPED
@@ -99,10 +168,9 @@ export async function POST(request: NextRequest) {
     } else if (directPlatform) {
       platforms = [directPlatform]
     } else {
-      const idColumn = isClientCheck ? "CLIENT_ID" : "ACCOUNT_ID"
       const rows = await querySnowflake(
         `SELECT DISTINCT PLATFORM FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY ` +
-        `WHERE ${idColumn} = '${escapedGroup}' AND DATE >= DATEADD('day', -7, CURRENT_DATE())`
+        `WHERE ACCOUNT_ID = '${escapedGroup}' AND DATE >= DATEADD('day', -7, CURRENT_DATE())`
       )
       const found = new Set<string>()
       for (const r of rows) {
@@ -113,6 +181,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (platforms.length === 0) {
+      const clientId = Number(groupValue)
+      if (isAmbiguousGroupedCheck && !isPlatformLevel && Number.isFinite(clientId)) {
+        const result = await runClientSpendComparison(clientId, date)
+        if (result) return Response.json(result)
+      }
       return Response.json({
         error:
           "No supported platform found for this incident's account/client in the last 7 days. " +
@@ -120,32 +193,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // SPEND_CLIENT/SRC_SPEND_CLIENT's GROUP_VALUE is a numeric CLIENT_ID — the spend-
-    // validation service matches clients by name (ILIKE), so resolve it first.
-    let clientName: string | null = null
-    if (isClientCheck && !isPlatformLevel) {
-      const rows = await querySnowflake(
-        `SELECT CLIENT_NAME FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE CLIENT_ID = '${escapedGroup}' LIMIT 1`
-      )
-      clientName = rows[0]?.CLIENT_NAME || null
-      if (!clientName) {
-        return Response.json({ error: `Could not resolve client name for CLIENT_ID ${groupValue}` }, { status: 400 })
-      }
-    }
-
     const results = await Promise.all(
       platforms.map(async (platform) => {
         const payload: Record<string, string> = { platform, start_date: date, end_date: date }
-        // Platform-level: leave account_id/client unset so the service returns every
+        // Platform-level: leave account_id unset so the service returns every
         // account on that platform (spend-validation supports this directly), which
         // is exactly what a platform-wide SUM_VALUE_GROUPED check needs to compare
         // its own platform total against.
         if (!isPlatformLevel) {
-          if (isClientCheck) {
-            payload.client = clientName!
-          } else {
-            payload.account_id = String(groupValue)
-          }
+          payload.account_id = String(groupValue)
         }
 
         try {

@@ -76,6 +76,16 @@ export function CreditsView() {
     return true
   })
 
+  const sortedResults = [...results].sort((a, b) => {
+    const creditsDiff = (b.metricValue ?? 0) - (a.metricValue ?? 0)
+    if (creditsDiff !== 0) return creditsDiff
+    const checkDiff = a.checkType.localeCompare(b.checkType)
+    if (checkDiff !== 0) return checkDiff
+    const groupDiff = (a.groupValue || "").localeCompare(b.groupValue || "")
+    if (groupDiff !== 0) return groupDiff
+    return (b.checkTimestamp || "").localeCompare(a.checkTimestamp || "")
+  })
+
   const warehouseData = results
     .filter((r) => r.groupValue)
     .reduce((acc, r) => {
@@ -206,7 +216,7 @@ export function CreditsView() {
             </div>
           )}
 
-          <ResponsiveTable columns={warehouseColumns} data={results.slice(0, 50)} />
+          <ResponsiveTable columns={warehouseColumns} data={sortedResults.slice(0, 50)} />
         </div>
       )}
 

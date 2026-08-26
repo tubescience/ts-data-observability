@@ -1,4 +1,5 @@
 import { querySnowflake } from "@/lib/snowflake"
+import { computeThresholdBand } from "@/lib/threshold-band"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 
@@ -35,8 +36,19 @@ export async function GET(request: NextRequest) {
         r.GROUP_VALUE,
         r.DETAILS,
         CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE as CHECK_DATE,
-        CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST
+        CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST,
+        -- The real pass/fail band varies by check: some (ROW_COUNT/VOLUME baseline
+        -- mode) already compute and store their own lower/upper; SUM_VALUE_GROUPED's
+        -- day-of-week baseline anomaly check flags |z-score| >= 3 from the DOW mean
+        -- (THRESHOLD there is just yesterday's raw value, not a real limit); and some
+        -- fall back to a plain +/- pct band. See lib/threshold-band.ts.
+        r.DETAILS:lower::FLOAT AS DETAILS_LOWER,
+        r.DETAILS:upper::FLOAT AS DETAILS_UPPER,
+        r.DETAILS:dow_baseline_mean::FLOAT AS DOW_MEAN,
+        r.DETAILS:dow_baseline_std::FLOAT AS DOW_STD,
+        COALESCE(r.DETAILS:threshold_pct::FLOAT, cfg.THRESHOLD_PCT) AS EFFECTIVE_THRESHOLD_PCT
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS r
+      LEFT JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG cfg ON r.CONFIG_ID = cfg.CONFIG_ID
       WHERE r.CHECK_TYPE = '${checkType.replace(/'/g, "''")}'
         AND r.TARGET_TABLE = '${targetTable.replace(/'/g, "''")}'
         ${groupClause}
@@ -45,15 +57,27 @@ export async function GET(request: NextRequest) {
       ORDER BY r.CHECK_TIMESTAMP ASC
     `)
 
-    const results = rows.map((r) => ({
-      status: r.STATUS,
-      metricValue: r.METRIC_VALUE,
-      threshold: r.THRESHOLD,
-      groupValue: r.GROUP_VALUE,
-      details: r.DETAILS,
-      checkDate: toIso(r.CHECK_DATE)?.slice(0, 10) ?? null,
-      checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
-    }))
+    const results = rows.map((r) => {
+      const band = computeThresholdBand({
+        lower: r.DETAILS_LOWER,
+        upper: r.DETAILS_UPPER,
+        dowBaselineMean: r.DOW_MEAN,
+        dowBaselineStd: r.DOW_STD,
+        threshold: r.THRESHOLD,
+        thresholdPct: r.EFFECTIVE_THRESHOLD_PCT,
+      })
+      return {
+        status: r.STATUS,
+        metricValue: r.METRIC_VALUE,
+        threshold: r.THRESHOLD,
+        thresholdMin: band.min,
+        thresholdMax: band.max,
+        groupValue: r.GROUP_VALUE,
+        details: r.DETAILS,
+        checkDate: toIso(r.CHECK_DATE)?.slice(0, 10) ?? null,
+        checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
+      }
+    })
 
     return Response.json(results)
   } catch (e) {

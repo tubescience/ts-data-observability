@@ -3,17 +3,26 @@
 import { useState } from "react"
 import { X, ShieldCheck } from "lucide-react"
 
+interface ValidateToast {
+  id: string
+  incidentId: number
+  loading: boolean
+  error: string
+  rows: Record<string, any>[] | null
+}
+
+// Runs VALIDATE_INCIDENT as a non-blocking corner toast per incident, so multiple
+// incidents can be validated at once instead of one modal blocking the whole screen.
 export function useValidateIncidentCheck() {
-  const [checkingValidate, setCheckingValidate] = useState(false)
-  const [validateRows, setValidateRows] = useState<Record<string, any>[] | null>(null)
-  const [validateError, setValidateError] = useState("")
-  const [showValidatePopup, setShowValidatePopup] = useState(false)
+  const [toasts, setToasts] = useState<ValidateToast[]>([])
 
   const runValidateIncidentCheck = async (incidentId: number) => {
-    setShowValidatePopup(true)
-    setCheckingValidate(true)
-    setValidateRows(null)
-    setValidateError("")
+    const id = `${incidentId}-${Math.random().toString(36).slice(2)}`
+    setToasts((prev) => [...prev, { id, incidentId, loading: true, error: "", rows: null }])
+
+    const update = (patch: Partial<ValidateToast>) =>
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+
     try {
       const res = await fetch("/api/incidents/validate", {
         method: "POST",
@@ -22,25 +31,18 @@ export function useValidateIncidentCheck() {
       })
       const json = await res.json()
       if (!res.ok) {
-        setValidateError(json.error || `Error ${res.status}`)
+        update({ loading: false, error: json.error || `Error ${res.status}` })
         return
       }
-      setValidateRows(json.rows || [])
+      update({ loading: false, rows: json.rows || [] })
     } catch (err) {
-      setValidateError(err instanceof Error ? err.message : "Validation failed")
-    } finally {
-      setCheckingValidate(false)
+      update({ loading: false, error: err instanceof Error ? err.message : "Validation failed" })
     }
   }
 
-  return {
-    checkingValidate,
-    validateRows,
-    validateError,
-    showValidatePopup,
-    setShowValidatePopup,
-    runValidateIncidentCheck,
-  }
+  const dismissValidateToast = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id))
+
+  return { toasts, runValidateIncidentCheck, dismissValidateToast }
 }
 
 function formatValue(value: any): string {
@@ -49,74 +51,67 @@ function formatValue(value: any): string {
   return String(value)
 }
 
-export function ValidateIncidentPopup({
-  loading,
-  error,
-  rows,
-  onClose,
-}: {
-  loading: boolean
-  error: string
-  rows: Record<string, any>[] | null
-  onClose: () => void
-}) {
+function ValidateToastCard({ toast, onDismiss }: { toast: ValidateToast; onDismiss: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
-      <div
-        className="bg-card border border-border rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="font-semibold flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-teal-500" />
-            Validate Incident
-          </h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-2">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          {loading && (
-            <div className="flex items-center justify-center gap-2 text-sm text-teal-600 dark:text-teal-400 animate-pulse py-8">
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Running VALIDATE_INCIDENT...
-            </div>
-          )}
-          {error && <div className="text-destructive text-sm whitespace-pre-wrap text-center py-4">{error}</div>}
-
-          {rows && rows.length === 0 && !loading && (
-            <div className="text-sm text-muted-foreground text-center py-4">Procedure returned no rows.</div>
-          )}
-
-          {rows && rows.length > 0 && (
-            <div className="space-y-3">
-              {rows.map((row, i) => (
-                <div key={i} className="border border-border rounded-lg divide-y divide-border overflow-hidden">
-                  {Object.entries(row).map(([key, value]) => (
-                    <div key={key} className="flex items-start gap-3 px-3 py-2 text-sm">
-                      <span className="text-xs text-muted-foreground shrink-0 w-32">{key}</span>
-                      <span className="font-mono text-xs whitespace-pre-wrap break-all">{formatValue(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end p-4 border-t border-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2.5 text-sm border border-border rounded-md hover:bg-accent transition-colors"
-          >
-            Close
-          </button>
-        </div>
+    <div className="bg-card border border-border rounded-lg shadow-lg w-80 max-h-96 overflow-y-auto pointer-events-auto">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <h4 className="text-xs font-semibold flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+          Validate #{toast.incidentId}
+        </h4>
+        <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground p-1">
+          <X className="w-3.5 h-3.5" />
+        </button>
       </div>
+
+      <div className="p-3 space-y-2">
+        {toast.loading && (
+          <div className="flex items-center gap-2 text-xs text-teal-600 dark:text-teal-400 animate-pulse py-2">
+            <svg className="w-3.5 h-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Running VALIDATE_INCIDENT...
+          </div>
+        )}
+        {toast.error && <div className="text-destructive text-xs whitespace-pre-wrap py-1">{toast.error}</div>}
+
+        {toast.rows && toast.rows.length === 0 && !toast.loading && (
+          <div className="text-xs text-muted-foreground py-1">Procedure returned no rows.</div>
+        )}
+
+        {toast.rows && toast.rows.length > 0 && (
+          <div className="space-y-2">
+            {toast.rows.map((row, i) => (
+              <div key={i} className="border border-border rounded divide-y divide-border overflow-hidden">
+                {Object.entries(row).map(([key, value]) => (
+                  <div key={key} className="flex items-start gap-2 px-2 py-1.5 text-xs">
+                    <span className="text-muted-foreground shrink-0 w-20">{key}</span>
+                    <span className="font-mono whitespace-pre-wrap break-all">{formatValue(value)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function ValidateIncidentToasts({
+  toasts,
+  onDismiss,
+}: {
+  toasts: { id: string; incidentId: number; loading: boolean; error: string; rows: Record<string, any>[] | null }[]
+  onDismiss: (id: string) => void
+}) {
+  if (toasts.length === 0) return null
+  return (
+    <div className="fixed bottom-4 right-4 z-[60] flex flex-col-reverse gap-2 pointer-events-none">
+      {toasts.map((t) => (
+        <ValidateToastCard key={t.id} toast={t} onDismiss={() => onDismiss(t.id)} />
+      ))}
     </div>
   )
 }
