@@ -84,6 +84,7 @@ export function OpenIncidents() {
   const [targetFilter, setTargetFilter] = useState("")
   const [groupFilter, setGroupFilter] = useState("")
   const [tagFilter, setTagFilter] = useState<string[]>([])
+  const [tagExcludeFilter, setTagExcludeFilter] = useState<string[]>([])
   const today = getPSTDateOffset(0)
   const yesterday = getPSTDateOffset(-1)
   const thirtyDaysAgo = getPSTDateOffset(-30)
@@ -142,6 +143,7 @@ export function OpenIncidents() {
     if (targetFilter && !i.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
     if (groupFilter && !(i.groupValue || "").toLowerCase().includes(groupFilter.toLowerCase()) && !(i.groupName || "").toLowerCase().includes(groupFilter.toLowerCase())) return false
     if (tagFilter.length > 0 && !tagFilter.every((t) => i.tags.includes(t))) return false
+    if (tagExcludeFilter.length > 0 && tagExcludeFilter.some((t) => i.tags.includes(t))) return false
     return true
   }
 
@@ -377,6 +379,15 @@ export function OpenIncidents() {
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-36"
         />
         <TagMultiSelect allTags={allTags} selected={tagFilter} onChange={setTagFilter} colorMap={tagColors} className="w-full sm:w-auto" />
+        <TagMultiSelect
+          allTags={allTags}
+          selected={tagExcludeFilter}
+          onChange={setTagExcludeFilter}
+          colorMap={tagColors}
+          className="w-full sm:w-auto"
+          placeholder="Ignore Tags"
+          selectedPrefix="Ignore: "
+        />
         <div className="flex items-center gap-1 text-xs text-muted-foreground col-span-1 sm:col-span-2 md:col-span-1">
           <span>From</span>
           <input

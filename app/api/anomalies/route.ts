@@ -17,11 +17,14 @@ export async function GET(request: NextRequest) {
     await querySnowflake("USE ROLE MCP_MONITOR")
     const rows = await querySnowflake(`
       WITH client_names AS (
-        SELECT DISTINCT client_id::VARCHAR AS id, client_name AS name
-        FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE client_id IS NOT NULL AND client_name IS NOT NULL
+        -- Sourced from NAME_LOOKUP_CACHE (refreshed daily by OBS_TASK_REFRESH_NAME_CACHE)
+        -- instead of scanning V_SPEND_DAILY (300M+ rows) for DISTINCT ids on every
+        -- request -- names change rarely, so a daily-refreshed cache is plenty fresh.
+        SELECT ID AS id, NAME AS name
+        FROM TS_INGEST_DB.OBSERVABILITY.NAME_LOOKUP_CACHE WHERE ENTITY_TYPE = 'CLIENT'
       ), account_names AS (
-        SELECT DISTINCT account_id::VARCHAR AS id, account_name AS name
-        FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE account_id IS NOT NULL AND account_name IS NOT NULL
+        SELECT ID AS id, NAME AS name
+        FROM TS_INGEST_DB.OBSERVABILITY.NAME_LOOKUP_CACHE WHERE ENTITY_TYPE = 'ACCOUNT'
       ), client_check_types AS (
         SELECT check_type FROM VALUES ('SPEND_CLIENT'), ('SRC_SPEND_CLIENT') AS t(check_type)
       ), account_check_types AS (

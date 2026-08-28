@@ -37,13 +37,21 @@ function platformFromTable(targetTable: string): string | null {
   return null
 }
 
-// Client-level checks don't validate against a live ad-platform API (a client is a
-// cross-platform aggregate, not something any single platform API can confirm) --
-// instead compare the two internal reporting layers the client total is actually
-// built from. Uses SPEND_USD, not native SPEND: a client's accounts can span
-// multiple currencies (verified), so summing native amounts across them would be
-// meaningless. Returns null if neither layer has any row for this client/date, so
-// the caller can fall back to its own "nothing found" handling.
+async function resolveClientName(clientId: number): Promise<string | null> {
+  const rows = await querySnowflake(
+    `SELECT CLIENT_NAME FROM TS_PROD_DB.INGEST.SRC_TS_CLIENT_LIST WHERE CLIENT_ID = ${clientId} LIMIT 1`
+  )
+  return rows[0]?.CLIENT_NAME || null
+}
+
+// Only SPEND_CLIENT (targeting the cross-platform V_SPEND_DAILY aggregate) lacks a
+// live ad-platform API to validate against -- no single platform can confirm a
+// cross-client-platform total. So instead compare the two internal reporting
+// layers the client total is actually built from. Uses SPEND_USD, not native
+// SPEND: a client's accounts can span multiple currencies (verified), so summing
+// native amounts across them would be meaningless. Returns null if neither layer
+// has any row for this client/date, so the caller can fall back to its own
+// "nothing found" handling.
 async function runClientSpendComparison(clientId: number, date: string) {
   const [tgtRows, mcpRows] = await Promise.all([
     querySnowflake(
@@ -139,6 +147,9 @@ export async function POST(request: NextRequest) {
     const isAmbiguousGroupedCheck = checkType === "SUM_VALUE_GROUPED" || checkType === "DATA_RECENCY"
     const date = (createdAt && spendDateFromIncidentCreatedAt(createdAt)) || yesterdayPST()
     const escapedGroup = String(groupValue).replace(/'/g, "''")
+    // Raw SRC_<PLATFORM>_% target tables (e.g. SRC_TIKTOK_AD_INSIGHTS) tell us
+    // exactly which platform a check covers, regardless of check type.
+    const directPlatform = platformFromTable(targetTable || "")
 
     try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
 
@@ -147,6 +158,31 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(clientId)) {
         return Response.json({ error: `Invalid client id: ${groupValue}` }, { status: 400 })
       }
+
+      if (directPlatform) {
+        // SRC_SPEND_CLIENT targets one platform's raw source table -- a per-platform
+        // client total, which that platform's own API CAN validate (unlike
+        // SPEND_CLIENT's cross-platform V_SPEND_DAILY total, handled below).
+        const clientName = await resolveClientName(clientId)
+        if (!clientName) {
+          return Response.json({ error: `Could not resolve client name for CLIENT_ID ${groupValue}` }, { status: 400 })
+        }
+        try {
+          const res = await fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ platform: directPlatform, start_date: date, end_date: date, client: clientName }),
+          })
+          const json = await res.json()
+          return Response.json({ date, results: [{ platform: directPlatform, ...json }] })
+        } catch (e) {
+          return Response.json({
+            date,
+            results: [{ platform: directPlatform, status: "error", message: e instanceof Error ? e.message : "Request failed" }],
+          })
+        }
+      }
+
       const result = await runClientSpendComparison(clientId, date)
       if (!result) {
         return Response.json({ error: `No spend data found for CLIENT_ID ${groupValue} on ${date}` }, { status: 400 })
@@ -160,7 +196,6 @@ export async function POST(request: NextRequest) {
     // not an account/client ID, so looking it up as one finds nothing).
     let platforms: string[] = []
     let isPlatformLevel = false
-    const directPlatform = platformFromTable(targetTable || "")
     const platformFromGroupValue = SF_PLATFORM_MAP[String(groupValue).toUpperCase()]
     if (platformFromGroupValue) {
       platforms = [platformFromGroupValue]

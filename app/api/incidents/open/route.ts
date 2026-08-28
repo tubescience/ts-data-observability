@@ -13,11 +13,14 @@ export async function GET() {
     await querySnowflake("USE ROLE MCP_MONITOR")
     const rows = await querySnowflake(`
       WITH client_names AS (
-        SELECT DISTINCT client_id::VARCHAR AS id, client_name AS name
-        FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE client_id IS NOT NULL AND client_name IS NOT NULL
+        -- Sourced from NAME_LOOKUP_CACHE (refreshed daily by OBS_TASK_REFRESH_NAME_CACHE)
+        -- instead of rebuilding this DISTINCT scan on every dashboard request -- this
+        -- CTE alone ran ~1,400x/month across both warehouses for data that changes rarely.
+        SELECT ID AS id, NAME AS name
+        FROM TS_INGEST_DB.OBSERVABILITY.NAME_LOOKUP_CACHE WHERE ENTITY_TYPE = 'CLIENT'
       ), account_names AS (
-        SELECT DISTINCT account_id::VARCHAR AS id, account_name AS name
-        FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY WHERE account_id IS NOT NULL AND account_name IS NOT NULL
+        SELECT ID AS id, NAME AS name
+        FROM TS_INGEST_DB.OBSERVABILITY.NAME_LOOKUP_CACHE WHERE ENTITY_TYPE = 'ACCOUNT'
       ), client_check_types AS (
         -- SUM_VALUE_GROUPED/DATA_RECENCY are ambiguous: the same monitor can have
         -- separate configs grouping by CLIENT_ID, ACCOUNT_ID, or PLATFORM, and the

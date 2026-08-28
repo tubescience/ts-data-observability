@@ -51,9 +51,11 @@ interface TagMultiSelectProps {
   onChange: (tags: string[]) => void
   colorMap: Map<string, string>
   className?: string
+  placeholder?: string
+  selectedPrefix?: string
 }
 
-export function TagMultiSelect({ allTags, selected, onChange, colorMap, className }: TagMultiSelectProps) {
+export function TagMultiSelect({ allTags, selected, onChange, colorMap, className, placeholder = "All Tags", selectedPrefix = "" }: TagMultiSelectProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -69,7 +71,11 @@ export function TagMultiSelect({ allTags, selected, onChange, colorMap, classNam
     onChange(selected.includes(tag) ? selected.filter((t) => t !== tag) : [...selected, tag])
   }
 
-  const label = selected.length === 0 ? "All Tags" : selected.length === 1 ? selected[0] : `${selected.length} Tags`
+  const label = selected.length === 0
+    ? placeholder
+    : selected.length === 1
+    ? `${selectedPrefix}${selected[0]}`
+    : `${selectedPrefix}${selected.length} Tags`
 
   return (
     <div className={`relative ${className || ""}`} ref={ref}>
