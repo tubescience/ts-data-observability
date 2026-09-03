@@ -16,6 +16,7 @@ interface ResolvedIncident {
   checkType: string
   targetTable: string
   groupValue: string | null
+  groupName: string | null
   monitorId: number | null
   tags: string[]
   severity: string
@@ -37,9 +38,9 @@ export function ResolvedIncidents() {
   const today = getPSTToday()
   const [dateStart, setDateStart] = useState(today)
   const [dateEnd, setDateEnd] = useState(today)
-  const [severityFilter, setSeverityFilter] = useState("")
   const [checkFilter, setCheckFilter] = useState("")
   const [targetFilter, setTargetFilter] = useState("")
+  const [groupFilter, setGroupFilter] = useState("")
   const [tagFilter, setTagFilter] = useState("")
   const [viewing, setViewing] = useState<ResolvedIncident | null>(null)
   const [viewingMonitorId, setViewingMonitorId] = useState<number | null>(null)
@@ -51,14 +52,13 @@ export function ResolvedIncidents() {
   })
 
   const allIncidents = data || []
-  const severities = [...new Set(allIncidents.map((i) => i.severity))].sort()
   const checkTypes = [...new Set(allIncidents.map((i) => i.checkType))].sort()
   const allTags = [...new Set(allIncidents.flatMap((i) => i.tags || []))].sort()
 
   const incidents = allIncidents.filter((i) => {
-    if (severityFilter && i.severity !== severityFilter) return false
     if (checkFilter && i.checkType !== checkFilter) return false
     if (targetFilter && !i.targetTable.toLowerCase().includes(targetFilter.toLowerCase())) return false
+    if (groupFilter && !(i.groupValue || "").toLowerCase().includes(groupFilter.toLowerCase()) && !(i.groupName || "").toLowerCase().includes(groupFilter.toLowerCase())) return false
     if (tagFilter && !(i.tags || []).includes(tagFilter)) return false
     return true
   })
@@ -75,6 +75,14 @@ export function ResolvedIncidents() {
       label: "Target",
       className: "max-w-[200px] truncate text-xs",
       render: (val) => <span title={val}>{val}</span>,
+    },
+    {
+      key: "groupValue",
+      label: "Group",
+      className: "text-xs",
+      hideOnMobile: true,
+      render: (val, row) =>
+        val ? ((row as any).groupName ? <>{(row as any).groupName} <span className="text-muted-foreground">({val})</span></> : val) : "—",
     },
     {
       key: "resolvedAt",
@@ -146,14 +154,6 @@ export function ResolvedIncidents() {
           />
         </div>
         <select
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
-          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
-        >
-          <option value="">All Severities</option>
-          {severities.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select
           value={checkFilter}
           onChange={(e) => setCheckFilter(e.target.value)}
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
@@ -167,6 +167,13 @@ export function ResolvedIncidents() {
           onChange={(e) => setTargetFilter(e.target.value)}
           placeholder="Filter target..."
           className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-48"
+        />
+        <input
+          type="text"
+          value={groupFilter}
+          onChange={(e) => setGroupFilter(e.target.value)}
+          placeholder="Search group..."
+          className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-36"
         />
         <select
           value={tagFilter}

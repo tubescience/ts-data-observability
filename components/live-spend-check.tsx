@@ -20,9 +20,15 @@ interface LiveSpendRow {
   client_name?: string
   currency?: string
   snowflake_spend?: number
+  // ADPIP (TGT_ADPIP_REPORT.V_SPEND_DAILY) is a second reporting layer the
+  // validation service started returning alongside snowflake_spend (MCP's
+  // V_SPEND_DAILY) -- absent on older/cached responses, so treat as optional.
+  adpip_spend?: number | null
   platform_spend?: number | null
   diff?: number | null
   diff_pct?: number | null
+  diff_adpip?: number | null
+  diff_adpip_pct?: number | null
   error?: string | null
 }
 
@@ -134,33 +140,42 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
     )
   }
 
-  const ourLabel = result.ourLabel || "Our Data"
+  const ourLabel = result.ourLabel || "MCP V_SPEND_DAILY"
   const compareLabel = result.compareLabel || "Live API"
+  const adpipLabel = "ADPIP V_SPEND_DAILY"
+  const hasAdpip = rows.some((r) => r.adpip_spend != null)
 
   const validRows = rows.filter((r) => !r.error)
   const totalOur = validRows.reduce((sum, r) => sum + (r.snowflake_spend ?? 0), 0)
+  const totalAdpip = validRows.reduce((sum, r) => sum + (r.adpip_spend ?? 0), 0)
   const totalApi = validRows.reduce((sum, r) => sum + (r.platform_spend ?? 0), 0)
   const totalDiffPct = totalApi !== 0 ? ((totalOur - totalApi) / totalApi) * 100 : null
+  const totalAdpipDiffPct = totalApi !== 0 ? ((totalAdpip - totalApi) / totalApi) * 100 : null
   const currencies = new Set(validRows.map((r) => r.currency).filter(Boolean))
   const totalCurrency = currencies.size === 1 ? [...currencies][0] : undefined
   const totalCloseMatch = totalDiffPct != null && Math.abs(totalDiffPct) <= 2
+  const totalAdpipCloseMatch = totalAdpipDiffPct != null && Math.abs(totalAdpipDiffPct) <= 2
   const totalDiffText = totalDiffPct != null ? `${totalDiffPct > 0 ? "+" : ""}${totalDiffPct.toFixed(2)}%` : "—"
+  const totalAdpipDiffText = totalAdpipDiffPct != null ? `${totalAdpipDiffPct > 0 ? "+" : ""}${totalAdpipDiffPct.toFixed(2)}%` : "—"
   const totalResolveMessage =
     `Validated vs ${compareLabel}: ${label} — All accounts\n` +
     `${ourLabel}: ${formatFullQty(totalOur)}${totalCurrency ? " " + totalCurrency : ""}  ` +
+    (hasAdpip ? `${adpipLabel}: ${formatFullQty(totalAdpip)}${totalCurrency ? " " + totalCurrency : ""}  ` : "") +
     `${compareLabel}: ${formatFullQty(totalApi)}${totalCurrency ? " " + totalCurrency : ""}  ` +
-    `Diff: ${totalDiffText}`
+    `Diff: ${totalDiffText}` +
+    (hasAdpip ? ` (ADPIP diff: ${totalAdpipDiffText})` : "")
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <div className="px-3 py-2 bg-muted/50 text-xs font-semibold">{label}</div>
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-muted/30">
           <tr>
             <th className="text-left px-3 py-1.5 font-medium text-xs">Account / Client</th>
             <th className="text-right px-3 py-1.5 font-medium text-xs">{ourLabel}</th>
+            {hasAdpip && <th className="text-right px-3 py-1.5 font-medium text-xs">{adpipLabel}</th>}
             <th className="text-right px-3 py-1.5 font-medium text-xs">{compareLabel}</th>
-            <th className="text-right px-3 py-1.5 font-medium text-xs">Diff</th>
             <th className="text-right px-3 py-1.5 font-medium text-xs">Action</th>
           </tr>
         </thead>
@@ -168,14 +183,18 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
           {rows.map((row, i) => {
             const hasError = !!row.error
             const closeMatch = !hasError && row.diff_pct != null && Math.abs(row.diff_pct) <= 2
+            const adpipCloseMatch = !hasError && row.diff_adpip_pct != null && Math.abs(row.diff_adpip_pct) <= 2
             const name = row.account_name || row.client_name || row.account_id || ""
             const id = row.account_id || ""
             const diffText = row.diff_pct != null ? `${row.diff_pct > 0 ? "+" : ""}${row.diff_pct.toFixed(2)}%` : "—"
+            const adpipDiffText = row.diff_adpip_pct != null ? `${row.diff_adpip_pct > 0 ? "+" : ""}${row.diff_adpip_pct.toFixed(2)}%` : "—"
             const resolveMessage =
               `Validated vs ${compareLabel}: ${id} ${name}\n` +
-              `${ourLabel}: ${formatFullQty(row.snowflake_spend)}${row.currency ? " " + row.currency : ""}  ` +
-              `${compareLabel}: ${formatFullQty(row.platform_spend)}${row.currency ? " " + row.currency : ""}  ` +
-              `Diff: ${diffText}`
+              `${ourLabel}: ${formatFullQty(row.snowflake_spend)}${row.currency ? " " + row.currency : ""} (${diffText})\n` +
+              (row.adpip_spend != null
+                ? `${adpipLabel}: ${formatFullQty(row.adpip_spend)}${row.currency ? " " + row.currency : ""} (${adpipDiffText})\n`
+                : "") +
+              `${compareLabel}: ${formatFullQty(row.platform_spend)}${row.currency ? " " + row.currency : ""}`
             return (
               <tr key={i}>
                 <td className="px-3 py-2 text-xs">
@@ -183,23 +202,34 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
                   {row.client_name && <div className="text-muted-foreground">{row.client_name}</div>}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-xs">
-                  {row.snowflake_spend != null ? formatTick(row.snowflake_spend) : "—"}
-                  {row.currency && <span className="text-muted-foreground ml-1">{row.currency}</span>}
+                  <div>
+                    {row.snowflake_spend != null ? formatTick(row.snowflake_spend) : "—"}
+                    {row.currency && <span className="text-muted-foreground ml-1">{row.currency}</span>}
+                  </div>
+                  {!hasError && row.diff_pct != null && (
+                    <div className={closeMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                      {row.diff_pct > 0 ? "+" : ""}{row.diff_pct.toFixed(1)}%
+                    </div>
+                  )}
                 </td>
+                {hasAdpip && (
+                  <td className="px-3 py-2 text-right font-mono text-xs">
+                    <div>
+                      {row.adpip_spend != null ? formatTick(row.adpip_spend) : "—"}
+                      {row.adpip_spend != null && row.currency && <span className="text-muted-foreground ml-1">{row.currency}</span>}
+                    </div>
+                    {!hasError && row.diff_adpip_pct != null && (
+                      <div className={adpipCloseMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                        {row.diff_adpip_pct > 0 ? "+" : ""}{row.diff_adpip_pct.toFixed(1)}%
+                      </div>
+                    )}
+                  </td>
+                )}
                 <td className="px-3 py-2 text-right font-mono text-xs">
                   {hasError ? (
                     <span className="text-muted-foreground italic">{row.error}</span>
                   ) : row.platform_spend != null ? (
                     formatTick(row.platform_spend)
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-xs">
-                  {!hasError && row.diff_pct != null ? (
-                    <span className={closeMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                      {row.diff_pct > 0 ? "+" : ""}{row.diff_pct.toFixed(1)}%
-                    </span>
                   ) : (
                     "—"
                   )}
@@ -233,17 +263,28 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
             <tr className="border-t-2 border-border bg-muted/30 font-semibold">
               <td className="px-3 py-2 text-xs">Total ({validRows.length} account{validRows.length !== 1 ? "s" : ""})</td>
               <td className="px-3 py-2 text-right font-mono text-xs">
-                {formatTick(totalOur)}
-                {totalCurrency && <span className="text-muted-foreground ml-1 font-normal">{totalCurrency}</span>}
+                <div>
+                  {formatTick(totalOur)}
+                  {totalCurrency && <span className="text-muted-foreground ml-1 font-normal">{totalCurrency}</span>}
+                </div>
+                <div className={totalCloseMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                  {totalDiffPct != null ? `${totalDiffPct > 0 ? "+" : ""}${totalDiffPct.toFixed(1)}%` : "—"}
+                </div>
               </td>
+              {hasAdpip && (
+                <td className="px-3 py-2 text-right font-mono text-xs">
+                  <div>
+                    {formatTick(totalAdpip)}
+                    {totalCurrency && <span className="text-muted-foreground ml-1 font-normal">{totalCurrency}</span>}
+                  </div>
+                  <div className={totalAdpipCloseMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                    {totalAdpipDiffPct != null ? `${totalAdpipDiffPct > 0 ? "+" : ""}${totalAdpipDiffPct.toFixed(1)}%` : "—"}
+                  </div>
+                </td>
+              )}
               <td className="px-3 py-2 text-right font-mono text-xs">
                 {formatTick(totalApi)}
                 {totalCurrency && <span className="text-muted-foreground ml-1 font-normal">{totalCurrency}</span>}
-              </td>
-              <td className="px-3 py-2 text-right font-mono text-xs">
-                <span className={totalCloseMatch ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                  {totalDiffPct != null ? `${totalDiffPct > 0 ? "+" : ""}${totalDiffPct.toFixed(1)}%` : "—"}
-                </span>
               </td>
               <td className="px-3 py-2 text-right">
                 <div className="flex items-center justify-end gap-1">
@@ -267,6 +308,7 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
           </tfoot>
         )}
       </table>
+      </div>
       <div className="px-3 py-2 bg-muted/20 text-xs text-muted-foreground">
         {result.note || "Spend shown in each account's native currency, not USD — small diffs can be normal timing/rounding."}
       </div>
