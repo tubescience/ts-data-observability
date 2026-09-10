@@ -16,7 +16,11 @@ interface ValidateToast {
 export function useValidateIncidentCheck() {
   const [toasts, setToasts] = useState<ValidateToast[]>([])
 
-  const runValidateIncidentCheck = async (incidentId: number) => {
+  // VALIDATE_INCIDENT returns free-text prose (its RETURNS VARCHAR result), not a
+  // structured flag -- both its resolve paths (the account/client-inactive gate and
+  // the normal fresh-recheck path) end with the phrase "is now RESOLVED", so that's
+  // the only signal available for the caller to know a refetch is worth doing.
+  const runValidateIncidentCheck = async (incidentId: number): Promise<{ resolved: boolean }> => {
     const id = `${incidentId}-${Math.random().toString(36).slice(2)}`
     setToasts((prev) => [...prev, { id, incidentId, loading: true, error: "", rows: null }])
 
@@ -32,11 +36,15 @@ export function useValidateIncidentCheck() {
       const json = await res.json()
       if (!res.ok) {
         update({ loading: false, error: json.error || `Error ${res.status}` })
-        return
+        return { resolved: false }
       }
-      update({ loading: false, rows: json.rows || [] })
+      const rows = json.rows || []
+      update({ loading: false, rows })
+      const resolved = JSON.stringify(rows).toLowerCase().includes("is now resolved")
+      return { resolved }
     } catch (err) {
       update({ loading: false, error: err instanceof Error ? err.message : "Validation failed" })
+      return { resolved: false }
     }
   }
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb, Radio } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
@@ -68,6 +68,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   const [showSuggestion, setShowSuggestion] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
   const liveSpend = useLiveSpendCheck()
+  const queryClient = useQueryClient()
   const mlForecast = useMlForecastCheck()
 
   // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED / DATA_RECENCY
@@ -309,7 +310,13 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
 
           {LIVE_SPEND_CHECK_TYPES.has(incident.checkType) && incident.groupValue && (
             <button
-              onClick={() => liveSpend.runLiveSpendCheck(incident)}
+              onClick={async () => {
+                const result = await liveSpend.runLiveSpendCheck({ ...incident, incidentId: incident.incidentId })
+                if (result?.autoResolved) {
+                  queryClient.invalidateQueries({ queryKey: ["incidents-open"] })
+                  queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+                }
+              }}
               disabled={liveSpend.checkingLiveSpend}
               className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >

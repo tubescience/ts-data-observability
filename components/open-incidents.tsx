@@ -291,7 +291,14 @@ export function OpenIncidents() {
             <Lightbulb className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); validateIncident.runValidateIncidentCheck((row as any).incidentId) }}
+            onClick={async (e) => {
+              e.stopPropagation()
+              const { resolved } = await validateIncident.runValidateIncidentCheck((row as any).incidentId)
+              if (resolved) {
+                queryClient.invalidateQueries({ queryKey: ["incidents-open"] })
+                queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+              }
+            }}
             className="px-2 py-1 text-xs font-medium border border-border rounded hover:bg-accent transition-colors min-h-[32px]"
             title="Run VALIDATE_INCIDENT"
           >
@@ -450,7 +457,14 @@ export function OpenIncidents() {
                 </span>
                 {isSingle && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); validateIncident.runValidateIncidentCheck(group.incidents[0].incidentId) }}
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      const { resolved } = await validateIncident.runValidateIncidentCheck(group.incidents[0].incidentId)
+                      if (resolved) {
+                        queryClient.invalidateQueries({ queryKey: ["incidents-open"] })
+                        queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+                      }
+                    }}
                     className="px-2 py-1 text-xs font-medium border border-border rounded hover:bg-accent transition-colors shrink-0"
                     title="Run VALIDATE_INCIDENT"
                   >
@@ -585,7 +599,16 @@ export function OpenIncidents() {
               <div className="flex flex-col-reverse sm:flex-row gap-2 sm:mr-auto">
                 {LIVE_SPEND_CHECK_TYPES.has(resolving.checkType) && resolving.groupValue && (
                   <button
-                    onClick={() => { setLiveSpendOrigin("single"); liveSpend.runLiveSpendCheck(resolving) }}
+                    onClick={async () => {
+                      setLiveSpendOrigin("single")
+                      const result = await liveSpend.runLiveSpendCheck({ ...resolving, incidentId: resolving.incidentId })
+                      if (result?.autoResolved) {
+                        queryClient.invalidateQueries({ queryKey: ["incidents-open"] })
+                        queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+                        setResolving(null)
+                        setNotes("")
+                      }
+                    }}
                     disabled={liveSpend.checkingLiveSpend}
                     className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -682,7 +705,22 @@ export function OpenIncidents() {
               <div className="flex flex-col-reverse sm:flex-row gap-2 sm:mr-auto">
                 {LIVE_SPEND_CHECK_TYPES.has(resolvingGroup.checkType) && resolvingGroup.groupValue && (
                   <button
-                    onClick={() => { setLiveSpendOrigin("group"); liveSpend.runLiveSpendCheck({ checkType: resolvingGroup.checkType, targetTable: resolvingGroup.incidents[0].targetTable, groupValue: resolvingGroup.groupValue, createdAt: resolvingGroup.incidents[0].createdAt }) }}
+                    onClick={async () => {
+                      setLiveSpendOrigin("group")
+                      const result = await liveSpend.runLiveSpendCheck({
+                        checkType: resolvingGroup.checkType,
+                        targetTable: resolvingGroup.incidents[0].targetTable,
+                        groupValue: resolvingGroup.groupValue,
+                        createdAt: resolvingGroup.incidents[0].createdAt,
+                        incidentIds: resolvingGroup.incidents.map((i) => i.incidentId),
+                      })
+                      if (result?.autoResolved) {
+                        queryClient.invalidateQueries({ queryKey: ["incidents-open"] })
+                        queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+                        setResolvingGroup(null)
+                        setGroupNotes("")
+                      }
+                    }}
                     disabled={liveSpend.checkingLiveSpend}
                     className="px-4 py-2.5 text-sm inline-flex items-center gap-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >

@@ -4,6 +4,70 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const SPEND_VALIDATION_BASE_URL = "https://spendvalidation.vercel.app"
+const AUTO_RESOLVE_TOLERANCE_PCT = 2
+
+interface SpendRow {
+  snowflake_spend?: number | null
+  adpip_spend?: number | null
+  platform_spend?: number | null
+  platform_spend_adpip?: number | null
+  error?: string | null
+}
+
+interface PlatformResult {
+  platform: string
+  status?: string
+  rows?: SpendRow[]
+}
+
+// Decides whether the incident's OWN reported number (not the other reference
+// column also shown in the UI) is within tolerance of the live platform API.
+// A check's TARGET_TABLE tells us which reporting layer it actually reads from
+// (TGT_ADPIP_REPORT vs MCP's own REPORTING.V_SPEND_DAILY) -- that is the value
+// this incident is actually about, so that is what must match the live API for
+// auto-resolve, regardless of how the other (non-authoritative) column compares.
+// The "reporting" platform (client-level ADPIP-vs-MCP comparison, see
+// runClientSpendComparison) never confirms against a live platform API at all,
+// so it can never drive auto-resolve on its own.
+function computeOwnSourceMatch(targetTable: string, results: PlatformResult[]): { isMatch: boolean; details: string[] } {
+  const usesAdpip = /TGT_ADPIP_REPORT/i.test(targetTable || "")
+  const comparable = results.filter((r) => r.platform !== "reporting")
+  if (comparable.length === 0) return { isMatch: false, details: [] }
+
+  const details: string[] = []
+  for (const result of comparable) {
+    if (result.status === "error") return { isMatch: false, details }
+    const rows = (result.rows || []).filter((r) => !r.error)
+    if (rows.length === 0) return { isMatch: false, details }
+
+    // Google returns a SEPARATE live figure already scoped to match ADPIP's own
+    // account scope (platform_spend_adpip), distinct from platform_spend (the
+    // MCP-scoped one every other platform reuses for both comparisons) -- use it
+    // here when present so the ADPIP-side comparison isn't paired against the
+    // wrong-scope live number.
+    const totalOwn = rows.reduce((sum, r) => sum + ((usesAdpip ? r.adpip_spend : r.snowflake_spend) ?? 0), 0)
+    const totalApi = rows.reduce((sum, r) => sum + ((usesAdpip ? (r.platform_spend_adpip ?? r.platform_spend) : r.platform_spend) ?? 0), 0)
+    if (totalApi === 0) return { isMatch: false, details }
+
+    const diffPct = ((totalOwn - totalApi) / totalApi) * 100
+    if (Math.abs(diffPct) > AUTO_RESOLVE_TOLERANCE_PCT) return { isMatch: false, details }
+    details.push(`${result.platform}: ${usesAdpip ? "ADPIP" : "MCP"} ${totalOwn.toFixed(2)} vs Live API ${totalApi.toFixed(2)} (${diffPct > 0 ? "+" : ""}${diffPct.toFixed(2)}%)`)
+  }
+  return { isMatch: true, details }
+}
+
+async function autoResolveIncidents(ids: number[], resolutionNotes: string): Promise<void> {
+  if (ids.length === 0) return
+  await querySnowflake("USE ROLE MCP_MONITOR")
+  await querySnowflake(`
+    UPDATE TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS
+    SET STATUS = 'RESOLVED',
+        RESOLVED_AT = CURRENT_TIMESTAMP(),
+        RESOLUTION_NOTES = '${resolutionNotes.replace(/'/g, "''")}',
+        UPDATED_AT = CURRENT_TIMESTAMP()
+    WHERE INCIDENT_ID IN (${ids.join(",")}) AND STATUS = 'OPEN'
+  `)
+}
 
 // Raw SRC_<PLATFORM>_% tables encode their platform in the table name.
 const TABLE_PLATFORM_MAP: Record<string, string> = {
@@ -12,9 +76,13 @@ const TABLE_PLATFORM_MAP: Record<string, string> = {
   SNAPCHAT: "snapchat",
   PINTEREST: "pinterest",
   APPLOVIN: "applovin",
+  GOOGLE: "google",
 }
 
 // V_SPEND_DAILY's own PLATFORM codes (reporting layer, not table-name-derived).
+// Google/YouTube ('google') added once spend_validation started supporting it --
+// confirmed via direct probe: the platform value must be exactly 'google'
+// ('youtube'/'google_ads'/'yt' all return 400 Unsupported platform).
 const SF_PLATFORM_MAP: Record<string, string> = {
   FB: "facebook",
   FACEBOOK: "facebook",
@@ -27,6 +95,10 @@ const SF_PLATFORM_MAP: Record<string, string> = {
   PINTEREST: "pinterest",
   APLVN: "applovin",
   APPLOVIN: "applovin",
+  YT: "google",
+  YOUTUBE: "google",
+  GOOGLE: "google",
+  GOOGLE_ADS: "google",
 }
 
 function platformFromTable(targetTable: string): string | null {
@@ -132,10 +204,33 @@ function spendDateFromIncidentCreatedAt(iso: string): string | null {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { checkType, targetTable, groupValue, createdAt } = body
+    const { checkType, targetTable, groupValue, createdAt, incidentId, incidentIds } = body
 
     if (!checkType || !groupValue) {
       return Response.json({ error: "checkType and groupValue are required" }, { status: 400 })
+    }
+
+    const resolveIds: number[] = Array.isArray(incidentIds)
+      ? incidentIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isInteger(id))
+      : incidentId != null && Number.isInteger(Number(incidentId))
+      ? [Number(incidentId)]
+      : []
+
+    // Shared exit point for every successful comparison below: decides whether the
+    // incident's own reported number is within tolerance of the live API and, if
+    // so, resolves it immediately (no separate manual "Save Resolved" click) --
+    // same 2% tolerance the UI already uses to color-code a close match, just now
+    // acted on automatically instead of only informing a human's judgment call.
+    const finalize = async (payload: { date: string; results: PlatformResult[]; ourLabel?: string; compareLabel?: string; note?: string }) => {
+      const { isMatch, details } = computeOwnSourceMatch(targetTable || "", payload.results)
+      if (!isMatch || resolveIds.length === 0) {
+        return Response.json({ ...payload, autoResolved: false })
+      }
+      const resolutionNotes =
+        `Auto-resolved: live spend validation matched within ${AUTO_RESOLVE_TOLERANCE_PCT}% tolerance for ${payload.date}.\n` +
+        details.join("\n")
+      await autoResolveIncidents(resolveIds, resolutionNotes)
+      return Response.json({ ...payload, autoResolved: true, resolvedIds: resolveIds, resolutionNotes })
     }
 
     const isExplicitClientCheck = checkType === "SPEND_CLIENT" || checkType === "SRC_SPEND_CLIENT"
@@ -174,11 +269,12 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({ platform: directPlatform, start_date: date, end_date: date, client: clientName }),
           })
           const json = await res.json()
-          return Response.json({ date, results: [{ platform: directPlatform, ...json }] })
+          return finalize({ date, results: [{ platform: directPlatform, ...json }] })
         } catch (e) {
           return Response.json({
             date,
             results: [{ platform: directPlatform, status: "error", message: e instanceof Error ? e.message : "Request failed" }],
+            autoResolved: false,
           })
         }
       }
@@ -187,7 +283,7 @@ export async function POST(request: NextRequest) {
       if (!result) {
         return Response.json({ error: `No spend data found for CLIENT_ID ${groupValue} on ${date}` }, { status: 400 })
       }
-      return Response.json(result)
+      return finalize(result)
     }
 
     // Resolve which platform(s) to check, and whether GROUP_VALUE is itself an
@@ -219,12 +315,12 @@ export async function POST(request: NextRequest) {
       const clientId = Number(groupValue)
       if (isAmbiguousGroupedCheck && !isPlatformLevel && Number.isFinite(clientId)) {
         const result = await runClientSpendComparison(clientId, date)
-        if (result) return Response.json(result)
+        if (result) return finalize(result)
       }
       return Response.json({
         error:
           "No supported platform found for this incident's account/client in the last 7 days. " +
-          "Live validation covers Meta, TikTok, Snapchat, Pinterest, and AppLovin only.",
+          "Live validation covers Meta, TikTok, Snapchat, Pinterest, AppLovin, and Google/YouTube only.",
       }, { status: 400 })
     }
 
@@ -253,7 +349,7 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    return Response.json({ date, results })
+    return finalize({ date, results })
   } catch (e) {
     console.error(new Date().toISOString(), "[validate-vs-api]", e)
     return Response.json(
