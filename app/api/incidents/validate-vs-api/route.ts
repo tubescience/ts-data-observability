@@ -20,6 +20,38 @@ interface PlatformResult {
   rows?: SpendRow[]
 }
 
+// What the server actually resolved and used -- surfaced back to the UI so it can
+// show what was checked, instead of the frontend guessing/sending its own version
+// of these and risking disagreement with what the server actually did.
+interface RequestParamsInfo {
+  groupType: "client" | "account" | "platform"
+  groupValue: string
+  resolvedName: string | null
+  platforms: string[]
+  date: string
+}
+
+// Display-only guess for when neither the account nor client lookup found any
+// data to confirm the grain either way (see the "no platform found" branch).
+// Every observed CLIENT_ID is a short sequential integer (<=3 digits, e.g. 101,
+// 150, 226); every observed ACCOUNT_ID is a long platform-native number (13+
+// digits, e.g. 516177035416343). Never used to change control flow -- only to
+// avoid mislabeling an obviously account-shaped id as "platform" just because
+// the check type happens to be one of the ambiguous ones.
+function guessGroupType(groupValue: string): "client" | "account" {
+  return /^\d{1,5}$/.test(groupValue) ? "client" : "account"
+}
+
+function firstResolvedName(results: PlatformResult[]): string | null {
+  for (const r of results) {
+    for (const row of r.rows || []) {
+      const name = (row as any).account_name || (row as any).client_name
+      if (name) return name
+    }
+  }
+  return null
+}
+
 // Decides whether the incident's OWN reported number (not the other reference
 // column also shown in the UI) is within tolerance of the live platform API.
 // A check's TARGET_TABLE tells us which reporting layer it actually reads from
@@ -114,6 +146,71 @@ async function resolveClientName(clientId: number): Promise<string | null> {
     `SELECT CLIENT_NAME FROM TS_PROD_DB.INGEST.SRC_TS_CLIENT_LIST WHERE CLIENT_ID = ${clientId} LIMIT 1`
   )
   return rows[0]?.CLIENT_NAME || null
+}
+
+// SRC_TS_ACCOUNT_LIST carries PLATFORM as a static attribute of the account
+// itself, not derived from recent spend rows -- so unlike the V_SPEND_DAILY
+// 7-day lookup, it still resolves the platform for accounts with no recent
+// activity (e.g. STATUS = 'prospective', onboarded but not yet spending).
+async function resolveAccountFromList(accountId: string): Promise<{ platform: string | null; accountName: string | null } | null> {
+  const rows = await querySnowflake(
+    `SELECT PLATFORM, ACCOUNT_NAME FROM TS_PROD_DB.INGEST.SRC_TS_ACCOUNT_LIST WHERE ACCOUNT_ID::VARCHAR = '${accountId.replace(/'/g, "''")}' LIMIT 1`
+  )
+  if (rows.length === 0) return null
+  const mapped = SF_PLATFORM_MAP[String(rows[0].PLATFORM || "").toUpperCase()] || null
+  return { platform: mapped, accountName: rows[0].ACCOUNT_NAME || null }
+}
+
+// Discovers which platforms a client actually has active accounts on, so a
+// cross-platform client total can be validated one platform at a time -- no
+// single API confirms the combined total, but each platform's own API CAN
+// confirm its own slice. SRC_TS_ACCOUNT_LIST (not V_SPEND_DAILY) is the source
+// here because it's the account registry itself, not a recent-spend lookup --
+// a client's platform lineup shouldn't depend on which of its accounts spent
+// in the last 7 days. STATUS filter matches the project-wide "still counts as
+// active for validation" set (see VALIDATE_INCIDENT's own account gate) --
+// 'active' alone excluded real, currently-spending accounts like newly onboarded
+// clients still marked 'prospective' (confirmed: David Protein, SRI Labs, Open
+// Farm Pet all fell back to the reporting-only comparison under 'active' only,
+// despite having real spend, because their FB accounts are 'prospective').
+async function resolveClientPlatforms(clientId: number): Promise<string[]> {
+  const rows = await querySnowflake(
+    `SELECT DISTINCT PLATFORM FROM TS_PROD_DB.INGEST.SRC_TS_ACCOUNT_LIST WHERE CLIENT_ID = ${clientId} AND STATUS IN ('active', 'prospective', 'active - not delivering')`
+  )
+  const found = new Set<string>()
+  for (const r of rows) {
+    const mapped = SF_PLATFORM_MAP[String(r.PLATFORM || "").toUpperCase()]
+    if (mapped) found.add(mapped)
+  }
+  return Array.from(found)
+}
+
+// Per-platform breakdown for a client: one live-API call per platform the
+// client actually runs on (from resolveClientPlatforms), each returned as its
+// own PlatformResult so the existing multi-platform UI renders a panel per
+// platform automatically. Returns null (caller falls back to the internal
+// reporting-layer comparison) when the client has no active account on any
+// platform this service supports.
+async function runClientPerPlatformComparison(clientId: number, clientName: string, date: string): Promise<{ date: string; results: PlatformResult[] } | null> {
+  const platforms = await resolveClientPlatforms(clientId)
+  if (platforms.length === 0) return null
+
+  const results = await Promise.all(
+    platforms.map(async (platform) => {
+      try {
+        const res = await fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform, start_date: date, end_date: date, client: clientName }),
+        })
+        const json = await res.json()
+        return { platform, ...json }
+      } catch (e) {
+        return { platform, status: "error", message: e instanceof Error ? e.message : "Request failed" }
+      }
+    })
+  )
+  return { date, results }
 }
 
 // Only SPEND_CLIENT (targeting the cross-platform V_SPEND_DAILY aggregate) lacks a
@@ -221,16 +318,20 @@ export async function POST(request: NextRequest) {
     // so, resolves it immediately (no separate manual "Save Resolved" click) --
     // same 2% tolerance the UI already uses to color-code a close match, just now
     // acted on automatically instead of only informing a human's judgment call.
-    const finalize = async (payload: { date: string; results: PlatformResult[]; ourLabel?: string; compareLabel?: string; note?: string }) => {
+    const finalize = async (
+      payload: { date: string; results: PlatformResult[]; ourLabel?: string; compareLabel?: string; note?: string },
+      requestParams: RequestParamsInfo
+    ) => {
+      requestParams.resolvedName = requestParams.resolvedName || firstResolvedName(payload.results)
       const { isMatch, details } = computeOwnSourceMatch(targetTable || "", payload.results)
       if (!isMatch || resolveIds.length === 0) {
-        return Response.json({ ...payload, autoResolved: false })
+        return Response.json({ ...payload, autoResolved: false, requestParams })
       }
       const resolutionNotes =
         `Auto-resolved: live spend validation matched within ${AUTO_RESOLVE_TOLERANCE_PCT}% tolerance for ${payload.date}.\n` +
         details.join("\n")
       await autoResolveIncidents(resolveIds, resolutionNotes)
-      return Response.json({ ...payload, autoResolved: true, resolvedIds: resolveIds, resolutionNotes })
+      return Response.json({ ...payload, autoResolved: true, resolvedIds: resolveIds, resolutionNotes, requestParams })
     }
 
     const isExplicitClientCheck = checkType === "SPEND_CLIENT" || checkType === "SRC_SPEND_CLIENT"
@@ -251,7 +352,10 @@ export async function POST(request: NextRequest) {
     if (isExplicitClientCheck) {
       const clientId = Number(groupValue)
       if (!Number.isFinite(clientId)) {
-        return Response.json({ error: `Invalid client id: ${groupValue}` }, { status: 400 })
+        return Response.json({
+          error: `Invalid client id: ${groupValue}`,
+          requestParams: { groupType: "client", groupValue: String(groupValue), resolvedName: null, platforms: directPlatform ? [directPlatform] : [], date },
+        }, { status: 400 })
       }
 
       if (directPlatform) {
@@ -260,7 +364,17 @@ export async function POST(request: NextRequest) {
         // SPEND_CLIENT's cross-platform V_SPEND_DAILY total, handled below).
         const clientName = await resolveClientName(clientId)
         if (!clientName) {
-          return Response.json({ error: `Could not resolve client name for CLIENT_ID ${groupValue}` }, { status: 400 })
+          return Response.json({
+            error: `Could not resolve client name for CLIENT_ID ${groupValue}`,
+            requestParams: { groupType: "client", groupValue: String(groupValue), resolvedName: null, platforms: [directPlatform], date },
+          }, { status: 400 })
+        }
+        const requestParams: RequestParamsInfo = {
+          groupType: "client",
+          groupValue: String(groupValue),
+          resolvedName: clientName,
+          platforms: [directPlatform],
+          date,
         }
         try {
           const res = await fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
@@ -269,21 +383,50 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({ platform: directPlatform, start_date: date, end_date: date, client: clientName }),
           })
           const json = await res.json()
-          return finalize({ date, results: [{ platform: directPlatform, ...json }] })
+          return finalize({ date, results: [{ platform: directPlatform, ...json }] }, requestParams)
         } catch (e) {
           return Response.json({
             date,
             results: [{ platform: directPlatform, status: "error", message: e instanceof Error ? e.message : "Request failed" }],
             autoResolved: false,
+            requestParams,
+          })
+        }
+      }
+
+      // Cross-platform client total: no single API confirms the combined figure,
+      // but each platform the client actually runs on (from SRC_TS_ACCOUNT_LIST)
+      // has its own API that can confirm its slice -- try that breakdown first,
+      // and only fall back to the internal ADPIP-vs-MCP reporting comparison if
+      // the client has no active account on any platform this service supports.
+      const clientNameForBreakdown = await resolveClientName(clientId)
+      if (clientNameForBreakdown) {
+        const perPlatform = await runClientPerPlatformComparison(clientId, clientNameForBreakdown, date)
+        if (perPlatform) {
+          return finalize(perPlatform, {
+            groupType: "client",
+            groupValue: String(groupValue),
+            resolvedName: clientNameForBreakdown,
+            platforms: perPlatform.results.map((r) => r.platform),
+            date,
           })
         }
       }
 
       const result = await runClientSpendComparison(clientId, date)
       if (!result) {
-        return Response.json({ error: `No spend data found for CLIENT_ID ${groupValue} on ${date}` }, { status: 400 })
+        return Response.json({
+          error: `No spend data found for CLIENT_ID ${groupValue} on ${date}`,
+          requestParams: { groupType: "client", groupValue: String(groupValue), resolvedName: clientNameForBreakdown, platforms: ["reporting"], date },
+        }, { status: 400 })
       }
-      return finalize(result)
+      return finalize(result, {
+        groupType: "client",
+        groupValue: String(groupValue),
+        resolvedName: clientNameForBreakdown,
+        platforms: ["reporting"],
+        date,
+      })
     }
 
     // Resolve which platform(s) to check, and whether GROUP_VALUE is itself an
@@ -292,6 +435,7 @@ export async function POST(request: NextRequest) {
     // not an account/client ID, so looking it up as one finds nothing).
     let platforms: string[] = []
     let isPlatformLevel = false
+    let accountListName: string | null = null
     const platformFromGroupValue = SF_PLATFORM_MAP[String(groupValue).toUpperCase()]
     if (platformFromGroupValue) {
       platforms = [platformFromGroupValue]
@@ -309,18 +453,60 @@ export async function POST(request: NextRequest) {
         if (mapped) found.add(mapped)
       }
       platforms = Array.from(found)
+
+      // No recent spend rows to infer the platform from (e.g. a newly onboarded,
+      // not-yet-spending account) -- SRC_TS_ACCOUNT_LIST carries PLATFORM as a
+      // static account attribute instead, so it still resolves in that case.
+      if (platforms.length === 0) {
+        const accountInfo = await resolveAccountFromList(String(groupValue))
+        if (accountInfo) {
+          accountListName = accountInfo.accountName
+          if (accountInfo.platform) platforms = [accountInfo.platform]
+        }
+      }
     }
 
     if (platforms.length === 0) {
       const clientId = Number(groupValue)
-      if (isAmbiguousGroupedCheck && !isPlatformLevel && Number.isFinite(clientId)) {
+      // Only try the client interpretation when we haven't already confirmed this
+      // is a real, known account (just on an unsupported platform) -- no reason to
+      // guess client when the account list already answered the question.
+      if (isAmbiguousGroupedCheck && !isPlatformLevel && !accountListName && Number.isFinite(clientId)) {
+        const clientNameForBreakdown = await resolveClientName(clientId)
+        if (clientNameForBreakdown) {
+          const perPlatform = await runClientPerPlatformComparison(clientId, clientNameForBreakdown, date)
+          if (perPlatform) {
+            return finalize(perPlatform, {
+              groupType: "client",
+              groupValue: String(groupValue),
+              resolvedName: clientNameForBreakdown,
+              platforms: perPlatform.results.map((r) => r.platform),
+              date,
+            })
+          }
+        }
         const result = await runClientSpendComparison(clientId, date)
-        if (result) return finalize(result)
+        if (result) {
+          return finalize(result, {
+            groupType: "client",
+            groupValue: String(groupValue),
+            resolvedName: clientNameForBreakdown,
+            platforms: ["reporting"],
+            date,
+          })
+        }
       }
       return Response.json({
         error:
           "No supported platform found for this incident's account/client in the last 7 days. " +
           "Live validation covers Meta, TikTok, Snapchat, Pinterest, AppLovin, and Google/YouTube only.",
+        requestParams: {
+          groupType: accountListName ? "account" : isAmbiguousGroupedCheck ? guessGroupType(String(groupValue)) : "account",
+          groupValue: String(groupValue),
+          resolvedName: accountListName,
+          platforms: [],
+          date,
+        },
       }, { status: 400 })
     }
 
@@ -349,7 +535,13 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    return finalize({ date, results })
+    return finalize({ date, results }, {
+      groupType: isPlatformLevel ? "platform" : "account",
+      groupValue: String(groupValue),
+      resolvedName: accountListName,
+      platforms,
+      date,
+    })
   } catch (e) {
     console.error(new Date().toISOString(), "[validate-vs-api]", e)
     return Response.json(

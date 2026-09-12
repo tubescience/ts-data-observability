@@ -61,12 +61,25 @@ export interface LiveSpendTarget {
   incidentIds?: number[]
 }
 
+// What the backend actually resolved and sent to the spend-validation service
+// (or used for the internal reporting comparison) -- surfaced back so the UI
+// can show what was actually checked, instead of the frontend guessing/sending
+// its own version of these and risking disagreement with what the server used.
+export interface LiveSpendRequestParams {
+  groupType: "client" | "account" | "platform"
+  groupValue: string
+  resolvedName: string | null
+  platforms: string[]
+  date: string
+}
+
 export interface LiveSpendCheckResponse {
   date: string
   results: LiveSpendPlatformResult[]
   autoResolved?: boolean
   resolvedIds?: number[]
   resolutionNotes?: string
+  requestParams?: LiveSpendRequestParams
 }
 
 // Encapsulates the fetch + popup-visibility state so both Incident Detail
@@ -75,6 +88,9 @@ export function useLiveSpendCheck() {
   const [checkingLiveSpend, setCheckingLiveSpend] = useState(false)
   const [liveSpendResult, setLiveSpendResult] = useState<LiveSpendCheckResponse | null>(null)
   const [liveSpendError, setLiveSpendError] = useState("")
+  // Kept even when the check fails outright (e.g. "no supported platform found")
+  // so the UI can still show what was actually looked up, not just the error text.
+  const [liveSpendErrorParams, setLiveSpendErrorParams] = useState<LiveSpendRequestParams | null>(null)
   const [showLiveSpendPopup, setShowLiveSpendPopup] = useState(false)
   const [liveSpendCheckType, setLiveSpendCheckType] = useState("")
 
@@ -87,6 +103,7 @@ export function useLiveSpendCheck() {
     setCheckingLiveSpend(true)
     setLiveSpendResult(null)
     setLiveSpendError("")
+    setLiveSpendErrorParams(null)
     setLiveSpendCheckType(target.checkType)
     try {
       const res = await fetch("/api/incidents/validate-vs-api", {
@@ -104,6 +121,7 @@ export function useLiveSpendCheck() {
       const json = await res.json()
       if (!res.ok) {
         setLiveSpendError(json.error || `Error ${res.status}`)
+        setLiveSpendErrorParams(json.requestParams || null)
         return null
       }
       setLiveSpendResult(json)
@@ -120,6 +138,7 @@ export function useLiveSpendCheck() {
     checkingLiveSpend,
     liveSpendResult,
     liveSpendError,
+    liveSpendErrorParams,
     showLiveSpendPopup,
     setShowLiveSpendPopup,
     liveSpendCheckType,
@@ -140,6 +159,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   snapchat: "Snapchat",
   pinterest: "Pinterest",
   applovin: "AppLovin",
+  google: "Google/YouTube",
   reporting: "Client Spend (Reporting Comparison)",
 }
 
@@ -374,9 +394,27 @@ function LiveSpendPlatformPanel({ result, onUseInResolve }: { result: LiveSpendP
 // incidents grouped by client, so the platform-API wording still fits them best.
 const CLIENT_CHECK_TYPES = new Set(["SPEND_CLIENT", "SRC_SPEND_CLIENT"])
 
+function RequestParamsBar({ params }: { params: LiveSpendRequestParams }) {
+  return (
+    <div className="text-xs text-muted-foreground bg-muted/30 border border-border rounded-md px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
+      <span><span className="font-medium text-foreground">Type:</span> {params.groupType}</span>
+      <span>
+        <span className="font-medium text-foreground">{params.groupType === "platform" ? "Platform code" : params.groupType === "client" ? "Client" : "Account"}:</span>{" "}
+        {params.resolvedName ? `${params.resolvedName} (${params.groupValue})` : params.groupValue}
+      </span>
+      <span>
+        <span className="font-medium text-foreground">Platform{params.platforms.length > 1 ? "s" : ""}:</span>{" "}
+        {params.platforms.length > 0 ? params.platforms.join(", ") : "none found"}
+      </span>
+      <span><span className="font-medium text-foreground">Date:</span> {params.date}</span>
+    </div>
+  )
+}
+
 export function LiveSpendPopup({
   loading,
   error,
+  errorParams,
   result,
   checkType,
   onClose,
@@ -384,6 +422,7 @@ export function LiveSpendPopup({
 }: {
   loading: boolean
   error: string
+  errorParams?: LiveSpendRequestParams | null
   result: LiveSpendCheckResponse | null
   checkType?: string
   onClose: () => void
@@ -421,6 +460,8 @@ export function LiveSpendPopup({
             </div>
           )}
           {error && <div className="text-destructive text-sm text-center py-4">{error}</div>}
+          {errorParams && <RequestParamsBar params={errorParams} />}
+          {result?.requestParams && <RequestParamsBar params={result.requestParams} />}
           {result?.autoResolved && (
             <div className="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-500/40 rounded-md p-3 whitespace-pre-wrap">
               ✅ Matched the live API within tolerance — incident{result.resolvedIds && result.resolvedIds.length > 1 ? "s" : ""} auto-resolved.

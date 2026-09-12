@@ -384,6 +384,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
           <LiveSpendPopup
             loading={liveSpend.checkingLiveSpend}
             error={liveSpend.liveSpendError}
+            errorParams={liveSpend.liveSpendErrorParams}
             result={liveSpend.liveSpendResult}
             checkType={liveSpend.liveSpendCheckType}
             onClose={() => liveSpend.setShowLiveSpendPopup(false)}
