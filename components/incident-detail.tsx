@@ -108,11 +108,21 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
         date: r.checkDate!,
         value: r.metricValue,
         threshold: r.threshold,
+        thresholdMin: r.thresholdMin,
+        thresholdMax: r.thresholdMax,
         status: r.status,
       }))
   }, [results])
 
-  const latestThreshold = results.length > 0 ? results[results.length - 1]?.threshold : null
+  // Same "is the plain THRESHOLD column actually a real limit" question as the
+  // Check History table -- most check types compute a real min/max band (see
+  // lib/threshold-band.ts), so the chart should plot that band, not a single
+  // misleading "Threshold" line, whenever it's available.
+  const hasThresholdBand = chartData.some((d) => d.thresholdMin != null && d.thresholdMax != null)
+  const latest = results.length > 0 ? results[results.length - 1] : null
+  const latestThreshold = latest?.threshold ?? null
+  const latestThresholdMin = latest?.thresholdMin ?? null
+  const latestThresholdMax = latest?.thresholdMax ?? null
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
@@ -235,9 +245,24 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
                       const color = payload.status === "PASS" ? "#22c55e" : "#ef4444"
                       return <circle cx={cx} cy={cy} r={4} fill={color} stroke={color} />
                     }} />
-                    <Line type="monotone" dataKey="threshold" name="Threshold" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
-                    {latestThreshold != null && (
-                      <ReferenceLine y={latestThreshold} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.5} />
+                    {hasThresholdBand ? (
+                      <>
+                        <Line type="monotone" dataKey="thresholdMin" name="Min" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} connectNulls />
+                        <Line type="monotone" dataKey="thresholdMax" name="Max" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} connectNulls />
+                        {latestThresholdMin != null && (
+                          <ReferenceLine y={latestThresholdMin} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.5} />
+                        )}
+                        {latestThresholdMax != null && (
+                          <ReferenceLine y={latestThresholdMax} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.5} />
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <Line type="monotone" dataKey="threshold" name="Threshold" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+                        {latestThreshold != null && (
+                          <ReferenceLine y={latestThreshold} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.5} />
+                        )}
+                      </>
                     )}
                   </LineChart>
                 </ResponsiveContainer>

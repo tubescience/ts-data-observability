@@ -182,6 +182,25 @@ async function resolveClientPlatforms(clientId: number): Promise<string[]> {
     const mapped = SF_PLATFORM_MAP[String(r.PLATFORM || "").toUpperCase()]
     if (mapped) found.add(mapped)
   }
+
+  // STATUS can still lag real activity even past the widened set above - e.g.
+  // client 222 "Speak Japan" has genuine recent spend while both of its known
+  // FB accounts are marked 'not active' (incident 137748: Check Live Spend
+  // returned nothing to validate against because this lookup came back empty).
+  // Fall back to the client's actual recent spend by platform instead of
+  // trusting a stale registry field (same precedent as CHECK_LIVE_SPEND's own
+  // account-id and client-id fallbacks in Snowflake).
+  if (found.size === 0) {
+    const fallbackRows = await querySnowflake(
+      `SELECT DISTINCT PLATFORM FROM TS_PROD_DB.TGT_ADPIP_REPORT.V_SPEND_DAILY
+       WHERE CLIENT_ID = ${clientId} AND DATE >= DATEADD('day', -7, CURRENT_DATE())`
+    )
+    for (const r of fallbackRows) {
+      const mapped = SF_PLATFORM_MAP[String(r.PLATFORM || "").toUpperCase()]
+      if (mapped) found.add(mapped)
+    }
+  }
+
   return Array.from(found)
 }
 

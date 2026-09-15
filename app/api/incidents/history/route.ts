@@ -54,6 +54,10 @@ export async function GET(request: NextRequest) {
         ${groupClause}
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE >= '${dateStart}'
         AND CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE <= '${dateEnd}'
+      QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY CONVERT_TIMEZONE('America/Los_Angeles', r.CHECK_TIMESTAMP)::DATE
+        ORDER BY r.CHECK_TIMESTAMP DESC
+      ) = 1
       ORDER BY r.CHECK_TIMESTAMP ASC
     `)
 
