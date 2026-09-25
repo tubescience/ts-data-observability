@@ -1,4 +1,5 @@
 import { querySnowflake } from "@/lib/snowflake"
+import { normalizeMicroDollars } from "@/lib/units"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 
@@ -56,25 +57,28 @@ export async function GET(request: NextRequest) {
       ORDER BY r.CHECK_TIMESTAMP DESC
     `)
 
-    const anomalies = rows.map((r) => ({
-      resultId: r.RESULT_ID,
-      checkType: r.CHECK_TYPE,
-      targetTable: r.TARGET_TABLE,
-      groupValue: r.GROUP_VALUE,
-      groupName: r.GROUP_NAME || null,
-      severity: r.SEVERITY,
-      metricValue: r.METRIC_VALUE,
-      threshold: r.THRESHOLD,
-      details: r.DETAILS,
-      monitorId: r.MONITOR_ID ?? null,
-      checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
-      incidentId: r.INCIDENT_ID ?? null,
-      isResolved: r.INCIDENT_STATUS === "RESOLVED",
-      // No incident was ever opened for this result AND it's old enough that a later sync
-      // cycle would already have picked it up if it were still failing -- i.e. a transient
-      // blip that self-corrected before SYNC_INCIDENTS' latest-per-key logic ever saw it.
-      isStaleOrphan: r.IS_STALE_ORPHAN === true,
-    }))
+    const anomalies = rows.map((r) => {
+      const sumColumn = r.DETAILS?.sum_column as string | undefined
+      return {
+        resultId: r.RESULT_ID,
+        checkType: r.CHECK_TYPE,
+        targetTable: r.TARGET_TABLE,
+        groupValue: r.GROUP_VALUE,
+        groupName: r.GROUP_NAME || null,
+        severity: r.SEVERITY,
+        metricValue: normalizeMicroDollars(r.METRIC_VALUE, sumColumn),
+        threshold: normalizeMicroDollars(r.THRESHOLD, sumColumn),
+        details: r.DETAILS,
+        monitorId: r.MONITOR_ID ?? null,
+        checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),
+        incidentId: r.INCIDENT_ID ?? null,
+        isResolved: r.INCIDENT_STATUS === "RESOLVED",
+        // No incident was ever opened for this result AND it's old enough that a later sync
+        // cycle would already have picked it up if it were still failing -- i.e. a transient
+        // blip that self-corrected before SYNC_INCIDENTS' latest-per-key logic ever saw it.
+        isStaleOrphan: r.IS_STALE_ORPHAN === true,
+      }
+    })
 
     return Response.json(anomalies)
   } catch (e) {

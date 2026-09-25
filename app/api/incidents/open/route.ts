@@ -1,5 +1,6 @@
 import { querySnowflake } from "@/lib/snowflake"
 import { computeThresholdBand } from "@/lib/threshold-band"
+import { normalizeMicroDollars } from "@/lib/units"
 export const dynamic = "force-dynamic"
 
 function toIso(val: unknown): string | null {
@@ -62,6 +63,7 @@ export async function GET() {
         i.LAST_DETAILS:upper::FLOAT AS LAST_UPPER,
         i.LAST_DETAILS:dow_baseline_mean::FLOAT AS LAST_DOW_MEAN,
         i.LAST_DETAILS:dow_baseline_std::FLOAT AS LAST_DOW_STD,
+        i.LAST_DETAILS:sum_column::VARCHAR AS LAST_SUM_COLUMN,
         COALESCE(i.LAST_DETAILS:threshold_pct::FLOAT, cfg.THRESHOLD_PCT) AS EFFECTIVE_THRESHOLD_PCT
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS i
       LEFT JOIN names n ON n.id = i.GROUP_VALUE::VARCHAR AND n.check_type = i.CHECK_TYPE
@@ -74,12 +76,13 @@ export async function GET() {
     `)
 
     const incidents = rows.map((r) => {
+      const sumColumn = r.LAST_SUM_COLUMN
       const band = computeThresholdBand({
-        lower: r.LAST_LOWER,
-        upper: r.LAST_UPPER,
-        dowBaselineMean: r.LAST_DOW_MEAN,
-        dowBaselineStd: r.LAST_DOW_STD,
-        threshold: r.LAST_THRESHOLD,
+        lower: normalizeMicroDollars(r.LAST_LOWER, sumColumn),
+        upper: normalizeMicroDollars(r.LAST_UPPER, sumColumn),
+        dowBaselineMean: normalizeMicroDollars(r.LAST_DOW_MEAN, sumColumn),
+        dowBaselineStd: normalizeMicroDollars(r.LAST_DOW_STD, sumColumn),
+        threshold: normalizeMicroDollars(r.LAST_THRESHOLD, sumColumn),
         thresholdPct: r.EFFECTIVE_THRESHOLD_PCT,
       })
       return {
@@ -93,8 +96,8 @@ export async function GET() {
         severity: r.SEVERITY,
         status: r.STATUS,
         failureCount: r.FAILURE_COUNT,
-        lastMetric: r.LAST_METRIC,
-        lastThreshold: r.LAST_THRESHOLD,
+        lastMetric: normalizeMicroDollars(r.LAST_METRIC, sumColumn),
+        lastThreshold: normalizeMicroDollars(r.LAST_THRESHOLD, sumColumn),
         thresholdMin: band.min,
         thresholdMax: band.max,
         suggestedResolution: r.SUGGESTED_RESOLUTION || null,

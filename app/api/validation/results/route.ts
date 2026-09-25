@@ -1,4 +1,5 @@
 import { querySnowflake } from "@/lib/snowflake"
+import { normalizeMicroDollars } from "@/lib/units"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
       const rows = await querySnowflake(`
         SELECT
           CHECK_TYPE, TARGET_TABLE, STATUS, METRIC_VALUE, THRESHOLD, GROUP_VALUE,
+          DETAILS:sum_column::VARCHAR AS SUM_COLUMN,
           CONVERT_TIMEZONE('America/Los_Angeles', CHECK_TIMESTAMP)::DATE as CHECK_DATE,
           CONVERT_TIMEZONE('America/Los_Angeles', CHECK_TIMESTAMP) as CHECK_TIMESTAMP_PST
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS
@@ -45,8 +47,8 @@ export async function GET(request: NextRequest) {
           checkType: r.CHECK_TYPE,
           targetTable: r.TARGET_TABLE,
           status: r.STATUS,
-          metricValue: r.METRIC_VALUE,
-          threshold: r.THRESHOLD,
+          metricValue: normalizeMicroDollars(r.METRIC_VALUE, r.SUM_COLUMN),
+          threshold: normalizeMicroDollars(r.THRESHOLD, r.SUM_COLUMN),
           groupValue: r.GROUP_VALUE,
           checkDate: toIso(r.CHECK_DATE)?.slice(0, 10) ?? null,
           checkTimestamp: toIso(r.CHECK_TIMESTAMP_PST),

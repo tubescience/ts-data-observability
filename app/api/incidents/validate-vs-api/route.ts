@@ -6,6 +6,36 @@ export const maxDuration = 60
 const SPEND_VALIDATION_BASE_URL = "https://spendvalidation.vercel.app"
 const AUTO_RESOLVE_TOLERANCE_PCT = 2
 
+// This route calls spendvalidation.vercel.app directly from TypeScript -- entirely
+// separate from CHECK_LIVE_SPEND's own Snowflake-side calls to the same API, and
+// previously logged nowhere at all, making "how many API calls per day, by
+// platform" impossible to answer without guessing. Both call sites now write to
+// the same shared table so the real total (batch sweep + manual UI clicks) is a
+// direct query. Never let a logging failure affect the actual validation result.
+function sqlStr(val: string | null | undefined): string {
+  return val == null ? "NULL" : `'${val.replace(/'/g, "''")}'`
+}
+
+async function logApiCall(
+  source: string,
+  platform: string,
+  incidentId: number | null,
+  groupType: string,
+  groupValue: string | null,
+  success: boolean,
+  errorMessage?: string | null
+) {
+  try {
+    await querySnowflake(
+      `INSERT INTO TS_INGEST_DB.OBSERVABILITY.SPEND_VALIDATION_API_CALLS
+       (SOURCE, PLATFORM, INCIDENT_ID, GROUP_TYPE, GROUP_VALUE, SUCCESS, ERROR_MESSAGE)
+       VALUES (${sqlStr(source)}, ${sqlStr(platform)}, ${incidentId ?? "NULL"}, ${sqlStr(groupType)}, ${sqlStr(groupValue)}, ${success}, ${sqlStr(errorMessage ?? null)})`
+    )
+  } catch {
+    // logging is best-effort, never block or fail the actual validation on it
+  }
+}
+
 interface SpendRow {
   snowflake_spend?: number | null
   adpip_spend?: number | null
@@ -210,7 +240,7 @@ async function resolveClientPlatforms(clientId: number): Promise<string[]> {
 // platform automatically. Returns null (caller falls back to the internal
 // reporting-layer comparison) when the client has no active account on any
 // platform this service supports.
-async function runClientPerPlatformComparison(clientId: number, clientName: string, date: string): Promise<{ date: string; results: PlatformResult[] } | null> {
+async function runClientPerPlatformComparison(clientId: number, clientName: string, date: string, incidentId: number | null = null): Promise<{ date: string; results: PlatformResult[] } | null> {
   const platforms = await resolveClientPlatforms(clientId)
   if (platforms.length === 0) return null
 
@@ -223,8 +253,10 @@ async function runClientPerPlatformComparison(clientId: number, clientName: stri
           body: JSON.stringify({ platform, start_date: date, end_date: date, client: clientName }),
         })
         const json = await res.json()
+        await logApiCall("APP_CLIENT_PER_PLATFORM", platform, incidentId, "client", String(clientId), true)
         return { platform, ...json }
       } catch (e) {
+        await logApiCall("APP_CLIENT_PER_PLATFORM", platform, incidentId, "client", String(clientId), false, e instanceof Error ? e.message : "Request failed")
         return { platform, status: "error", message: e instanceof Error ? e.message : "Request failed" }
       }
     })
@@ -402,8 +434,10 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({ platform: directPlatform, start_date: date, end_date: date, client: clientName }),
           })
           const json = await res.json()
+          await logApiCall("APP_CLIENT_DIRECT_PLATFORM", directPlatform, resolveIds[0] ?? null, "client", String(clientId), true)
           return finalize({ date, results: [{ platform: directPlatform, ...json }] }, requestParams)
         } catch (e) {
+          await logApiCall("APP_CLIENT_DIRECT_PLATFORM", directPlatform, resolveIds[0] ?? null, "client", String(clientId), false, e instanceof Error ? e.message : "Request failed")
           return Response.json({
             date,
             results: [{ platform: directPlatform, status: "error", message: e instanceof Error ? e.message : "Request failed" }],
@@ -420,7 +454,7 @@ export async function POST(request: NextRequest) {
       // the client has no active account on any platform this service supports.
       const clientNameForBreakdown = await resolveClientName(clientId)
       if (clientNameForBreakdown) {
-        const perPlatform = await runClientPerPlatformComparison(clientId, clientNameForBreakdown, date)
+        const perPlatform = await runClientPerPlatformComparison(clientId, clientNameForBreakdown, date, incidentId != null && Number.isInteger(Number(incidentId)) ? Number(incidentId) : null)
         if (perPlatform) {
           return finalize(perPlatform, {
             groupType: "client",
@@ -493,7 +527,7 @@ export async function POST(request: NextRequest) {
       if (isAmbiguousGroupedCheck && !isPlatformLevel && !accountListName && Number.isFinite(clientId)) {
         const clientNameForBreakdown = await resolveClientName(clientId)
         if (clientNameForBreakdown) {
-          const perPlatform = await runClientPerPlatformComparison(clientId, clientNameForBreakdown, date)
+          const perPlatform = await runClientPerPlatformComparison(clientId, clientNameForBreakdown, date, incidentId != null && Number.isInteger(Number(incidentId)) ? Number(incidentId) : null)
           if (perPlatform) {
             return finalize(perPlatform, {
               groupType: "client",
@@ -547,8 +581,10 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(payload),
           })
           const json = await res.json()
+          await logApiCall("APP_ACCOUNT_PLATFORM", platform, resolveIds[0] ?? null, isPlatformLevel ? "platform" : "account", String(groupValue), true)
           return { platform, ...json }
         } catch (e) {
+          await logApiCall("APP_ACCOUNT_PLATFORM", platform, resolveIds[0] ?? null, isPlatformLevel ? "platform" : "account", String(groupValue), false, e instanceof Error ? e.message : "Request failed")
           return { platform, status: "error", message: e instanceof Error ? e.message : "Request failed" }
         }
       })

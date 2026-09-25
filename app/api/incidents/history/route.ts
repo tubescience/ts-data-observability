@@ -1,5 +1,6 @@
 import { querySnowflake } from "@/lib/snowflake"
 import { computeThresholdBand } from "@/lib/threshold-band"
+import { normalizeMicroDollars } from "@/lib/units"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 
@@ -62,18 +63,19 @@ export async function GET(request: NextRequest) {
     `)
 
     const results = rows.map((r) => {
+      const sumColumn = r.DETAILS?.sum_column as string | undefined
       const band = computeThresholdBand({
-        lower: r.DETAILS_LOWER,
-        upper: r.DETAILS_UPPER,
-        dowBaselineMean: r.DOW_MEAN,
-        dowBaselineStd: r.DOW_STD,
-        threshold: r.THRESHOLD,
+        lower: normalizeMicroDollars(r.DETAILS_LOWER, sumColumn),
+        upper: normalizeMicroDollars(r.DETAILS_UPPER, sumColumn),
+        dowBaselineMean: normalizeMicroDollars(r.DOW_MEAN, sumColumn),
+        dowBaselineStd: normalizeMicroDollars(r.DOW_STD, sumColumn),
+        threshold: normalizeMicroDollars(r.THRESHOLD, sumColumn),
         thresholdPct: r.EFFECTIVE_THRESHOLD_PCT,
       })
       return {
         status: r.STATUS,
-        metricValue: r.METRIC_VALUE,
-        threshold: r.THRESHOLD,
+        metricValue: normalizeMicroDollars(r.METRIC_VALUE, sumColumn),
+        threshold: normalizeMicroDollars(r.THRESHOLD, sumColumn),
         thresholdMin: band.min,
         thresholdMax: band.max,
         groupValue: r.GROUP_VALUE,
