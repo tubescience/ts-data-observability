@@ -100,6 +100,17 @@ export async function GET() {
         lastThreshold: normalizeMicroDollars(r.LAST_THRESHOLD, sumColumn),
         thresholdMin: band.min,
         thresholdMax: band.max,
+        // Zero rows/volume against a real, meaningfully positive historical floor is
+        // the signature of an upstream sync/ETL that hasn't landed yet, not a genuine
+        // decline -- a real drop would show *some* rows, just below the floor, not an
+        // exact cliff to 0. Confirmed against live check history: these checks reliably
+        // settle to PASS later the same day once the sync catches up. Purely derived
+        // from data already fetched above -- no extra query.
+        likelySyncDelay:
+          (r.CHECK_TYPE === "ROW_COUNT" || r.CHECK_TYPE === "VOLUME") &&
+          normalizeMicroDollars(r.LAST_METRIC, sumColumn) === 0 &&
+          band.min != null &&
+          band.min > 0,
         suggestedResolution: r.SUGGESTED_RESOLUTION || null,
         suggestedResolutionReason: r.SUGGESTED_RESOLUTION_REASON || null,
         firstSeen: toIso(r.FIRST_SEEN_PST),

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb, Radio } from "lucide-react"
+import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb, Radio, Clock } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
@@ -40,6 +40,7 @@ interface Incident {
   lastThreshold: number | null
   thresholdMin: number | null
   thresholdMax: number | null
+  likelySyncDelay: boolean
   suggestedResolution: string | null
   suggestedResolutionReason: string | null
   firstSeen: string | null
@@ -190,6 +191,12 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             <span className="text-muted-foreground text-xs">First Seen</span>
             <p className="text-xs mt-0.5">{formatPST(incident.firstSeen)}</p>
           </div>
+          {incident.likelySyncDelay && (
+            <div className="col-span-2 md:col-span-4 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              Value is exactly 0 against a historical baseline that's never close to zero — usually means the upstream sync hasn't landed yet, not a real drop. Click Validate to re-check.
+            </div>
+          )}
         </div>
 
         {/* Date range */}

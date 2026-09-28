@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { X, Radar, Copy, Check, ArrowUp, ArrowDown, Minus, Lightbulb, CheckCircle2, AlertCircle, Radio, TrendingUp, ChevronDown, ChevronRight } from "lucide-react"
+import { X, Radar, Copy, Check, ArrowUp, ArrowDown, Minus, Lightbulb, CheckCircle2, AlertCircle, Radio, TrendingUp, ChevronDown, ChevronRight, Clock } from "lucide-react"
 import { useTagColors, TagBadges, TagMultiSelect } from "@/components/tag-colors"
 import { IncidentDetail } from "@/components/incident-detail"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
@@ -32,6 +32,7 @@ interface Incident {
   lastThreshold: number | null
   thresholdMin: number | null
   thresholdMax: number | null
+  likelySyncDelay: boolean
   suggestedResolution: string | null
   suggestedResolutionReason: string | null
   firstSeen: string | null
@@ -452,6 +453,15 @@ export function OpenIncidents() {
                     <TagBadges tags={groupTags} colorMap={tagColors} />
                   ) : null
                 })()}
+                {group.incidents.some((i) => i.likelySyncDelay) && (
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 shrink-0"
+                    title="Value is exactly 0 against a historical baseline that's never close to zero -- usually means the upstream sync hasn't landed yet, not a real drop. Click Validate to re-check."
+                  >
+                    <Clock className="w-3 h-3" />
+                    Likely sync delay
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground ml-auto shrink-0">
                   {group.incidents.length} incident{group.incidents.length !== 1 ? "s" : ""}
                 </span>
