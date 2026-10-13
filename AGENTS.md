@@ -42,13 +42,17 @@ the monitors that run them (`OBSERVABILITY_MONITORS`), all in `TS_INGEST_DB.OBSE
 - **Platform-code group values are not real entities.** `GROUP_VALUE` can be a platform code
   (`TIK`, `FB`, `APLVN`, `YT`, `SNAP`, `PIN`, etc.) rather than an account/client id — don't treat
   these as groupable entities (e.g. don't merge unrelated incidents just because they share `TIK`).
-- **Never scan `V_SPEND_DAILY` (300M+ rows, in either `TS_MCP_PROD_DB.REPORTING` or
+- **Never scan `V_SPEND_DAILY` (340M+ rows, in either `TS_PROD_MCP_DB.REPORT` or
   `TS_PROD_DB.TGT_ADPIP_REPORT`) for name resolution or per-request lookups** — this alone cost
   3-10s per request in more than one route before being fixed. Use `NAME_LOOKUP_CACHE`
   (`TS_INGEST_DB.OBSERVABILITY`, `ENTITY_TYPE = 'CLIENT'|'ACCOUNT'`, refreshed daily by
   `OBS_TASK_REFRESH_NAME_CACHE`) for id→name lookups, or the small dimension tables
   `TS_PROD_DB.INGEST.SRC_TS_ACCOUNT_LIST` (~760 rows) / `SRC_TS_CLIENT_LIST` (~230 rows) if the
-  cache doesn't cover what's needed.
+  cache doesn't cover what's needed. Any query against `TS_PROD_MCP_DB.REPORT.V_SPEND_DAILY` that
+  can't avoid it must still scope to `date >= DATEADD(day, -30, CURRENT_DATE())` (or narrower) so
+  Snowflake prunes on the date-clustered micro-partitions — relies on `TS_MCP_PROD_DB.REPORTING`
+  being renamed to `TS_PROD_MCP_DB.REPORT` (2026-10-13); update any reference still pointing at the
+  old name.
 - **PST dates must use explicit UTC arithmetic** (`Date.UTC`/`setUTCDate`/`getUTCDate`), never
   `new Date("YYYY-MM-DDT00:00:00")` — the latter parses in the *server's* local timezone, silently
   wrong whenever that's not UTC or PST/PDT (confirmed under `TZ=Asia/Tokyo`).
@@ -68,7 +72,7 @@ the monitors that run them (`OBSERVABILITY_MONITORS`), all in `TS_INGEST_DB.OBSE
   platform instead of erroring).
 - `SPEND_CLIENT`: targets the cross-platform `V_SPEND_DAILY` aggregate — no single platform API can
   confirm a cross-platform total, so this instead compares `SUM(SPEND_USD)` between
-  `TS_PROD_DB.TGT_ADPIP_REPORT.V_SPEND_DAILY` and `TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY` directly
+  `TS_PROD_DB.TGT_ADPIP_REPORT.V_SPEND_DAILY` and `TS_PROD_MCP_DB.REPORT.V_SPEND_DAILY` directly
   in Snowflake. Uses `SPEND_USD`, not native `SPEND` — a client's accounts can span multiple
   currencies (verified), so summing native amounts would be meaningless.
 - `SUM_VALUE_GROUPED`/`DATA_RECENCY` fall back to the client comparison above only when the normal

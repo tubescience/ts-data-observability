@@ -282,7 +282,7 @@ async function runClientSpendComparison(clientId: number, date: string) {
     ),
     querySnowflake(
       `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
-       FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY
+       FROM TS_PROD_MCP_DB.REPORT.V_SPEND_DAILY
        WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
        GROUP BY CLIENT_ID`
     ),
@@ -497,7 +497,7 @@ export async function POST(request: NextRequest) {
       platforms = [directPlatform]
     } else {
       const rows = await querySnowflake(
-        `SELECT DISTINCT PLATFORM FROM TS_MCP_PROD_DB.REPORTING.V_SPEND_DAILY ` +
+        `SELECT DISTINCT PLATFORM FROM TS_PROD_MCP_DB.REPORT.V_SPEND_DAILY ` +
         `WHERE ACCOUNT_ID = '${escapedGroup}' AND DATE >= DATEADD('day', -7, CURRENT_DATE())`
       )
       const found = new Set<string>()
