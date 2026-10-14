@@ -27,13 +27,42 @@ export function useValidateIncidentCheck() {
     const update = (patch: Partial<ValidateToast>) =>
       setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
 
+    // VALIDATE_INCIDENT can take minutes against the largest MCP views (confirmed: one
+    // Meta view alone took 3+ minutes), far past any serverless function's duration
+    // limit. Racing/cancelling it server-side risks blocking the shared Snowflake
+    // connection for other requests, so instead the client just stops waiting after a
+    // generous timeout and shows a clear message -- the validation keeps running to
+    // completion in Snowflake regardless; the incident will reflect the real outcome
+    // next time it's viewed, it just won't show up in this toast.
+    const TIMEOUT_MS = 55_000
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
     try {
       const res = await fetch("/api/incidents/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ incidentId }),
+        signal: controller.signal,
       })
-      const json = await res.json()
+
+      // A non-JSON body here (e.g. a platform-level timeout/error page) is not our
+      // route's own error handling -- it never got a chance to run. Treat it as a
+      // generic failure with a readable message instead of surfacing a raw
+      // "Unexpected token... is not valid JSON" parse error to the user.
+      let json: any
+      try {
+        json = await res.json()
+      } catch {
+        update({
+          loading: false,
+          error: res.ok
+            ? "Validation returned an unexpected (non-JSON) response."
+            : `Validation failed (HTTP ${res.status}) with an unreadable response.`,
+        })
+        return { resolved: false }
+      }
+
       if (!res.ok) {
         update({ loading: false, error: json.error || `Error ${res.status}` })
         return { resolved: false }
@@ -43,8 +72,18 @@ export function useValidateIncidentCheck() {
       const resolved = JSON.stringify(rows).toLowerCase().includes("is now resolved")
       return { resolved }
     } catch (err) {
-      update({ loading: false, error: err instanceof Error ? err.message : "Validation failed" })
+      const timedOut = err instanceof DOMException && err.name === "AbortError"
+      update({
+        loading: false,
+        error: timedOut
+          ? "Still running against a large table -- this can take a few minutes. The validation will complete in the background; re-check the incident shortly."
+          : err instanceof Error
+            ? err.message
+            : "Validation failed",
+      })
       return { resolved: false }
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 

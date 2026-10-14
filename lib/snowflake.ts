@@ -92,24 +92,43 @@ interface QueryOptions {
 let cachedConn: any = null
 let connReady = false
 let connPromise: Promise<any> | null = null
+// A Snowflake connection processes one statement at a time -- a single shared
+// connection reused across concurrent requests (same warm serverless instance)
+// means a slow query (e.g. a multi-minute scan against an RLS-heavy MCP view)
+// blocks every other request behind it until it finishes, including totally
+// unrelated, normally-instant queries. Confirmed in production: /api/incidents/open
+// and /api/dashboard (small, fast metadata-only queries) were returning 504s
+// purely because they landed on the same warm instance as a slow validate call.
+// Tracking busy state per-connection lets a concurrent caller fall back to its
+// own short-lived connection instead of queueing behind the shared one.
+let cachedConnBusy = false
+
+function openNewConnection(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const config = getConnectionConfig()
+    const conn = snowflake.createConnection(config)
+    conn.connect((err: any) => {
+      if (err) return reject(new Error(`Snowflake connection failed: ${err.message}`))
+      resolve(conn)
+    })
+  })
+}
 
 function getOrCreateConnection(): Promise<any> {
   if (cachedConn && connReady) return Promise.resolve(cachedConn)
   if (connPromise) return connPromise
 
-  connPromise = new Promise((resolve, reject) => {
-    const config = getConnectionConfig()
-    const conn = snowflake.createConnection(config)
-    conn.connect((err: any) => {
-      if (err) {
-        connPromise = null
-        return reject(new Error(`Snowflake connection failed: ${err.message}`))
-      }
+  connPromise = openNewConnection().then(
+    (conn) => {
       cachedConn = conn
       connReady = true
-      resolve(conn)
-    })
-  })
+      return conn
+    },
+    (err) => {
+      connPromise = null
+      throw err
+    }
+  )
 
   connPromise.catch(() => { connPromise = null; cachedConn = null; connReady = false })
   return connPromise
@@ -125,40 +144,73 @@ function isStaleConnectionError(err: any): boolean {
   )
 }
 
+function runQuery(conn: any, query: string, options: QueryOptions): Promise<Record<string, any>[]> {
+  return new Promise((resolve, reject) => {
+    const execOpts: any = { sqlText: query }
+    if (options.warehouse) {
+      execOpts.parameters = { QUERY_WAREHOUSE_NAME: options.warehouse }
+    }
+
+    conn.execute({
+      ...execOpts,
+      complete: (err: any, _stmt: any, rows: any) => {
+        if (err) reject(err)
+        else resolve((rows ?? []) as Record<string, any>[])
+      },
+    })
+  })
+}
+
 export async function querySnowflake(
   query: string,
   options: QueryOptions = {},
   allowRetry = true
 ): Promise<Record<string, any>[]> {
-  let conn: any
-  try {
-    conn = await getOrCreateConnection()
-  } catch {
-    // Retry once with fresh connection
-    cachedConn = null; connReady = false; connPromise = null
-    conn = await getOrCreateConnection()
+  // Claim the shared-connection slot synchronously, before any `await` -- two
+  // calls racing from the same request (e.g. Promise.all([queryA(), queryB()]))
+  // both start executing before either hits an await, so the check-and-set has
+  // to happen in that same synchronous tick or both could see "not busy" and
+  // collide on the one shared connection anyway.
+  const useShared = !cachedConnBusy
+  if (useShared) cachedConnBusy = true
+
+  // The shared connection is already claimed (by this call or a concurrent one)
+  // -- don't queue behind it (it could be a multi-minute scan). Use a one-off
+  // connection for this call instead; it's closed afterward, never cached.
+  if (!useShared) {
+    const conn = await openNewConnection()
+    try {
+      return await runQuery(conn, query, options)
+    } catch (err: any) {
+      throw new Error(`Query failed: ${err.message}`)
+    } finally {
+      conn.destroy(() => {})
+    }
   }
 
   try {
-    return await new Promise((resolve, reject) => {
-      const execOpts: any = { sqlText: query }
-      if (options.warehouse) {
-        execOpts.parameters = { QUERY_WAREHOUSE_NAME: options.warehouse }
-      }
-
-      conn.execute({
-        ...execOpts,
-        complete: (err: any, _stmt: any, rows: any) => {
-          if (err) reject(err)
-          else resolve((rows ?? []) as Record<string, any>[])
-        },
-      })
-    })
-  } catch (err: any) {
-    if (isStaleConnectionError(err)) {
+    let conn: any
+    try {
+      conn = await getOrCreateConnection()
+    } catch {
+      // Retry once with fresh connection
       cachedConn = null; connReady = false; connPromise = null
-      if (allowRetry) return querySnowflake(query, options, false)
+      conn = await getOrCreateConnection()
     }
-    throw new Error(`Query failed: ${err.message}`)
+
+    try {
+      return await runQuery(conn, query, options)
+    } catch (err: any) {
+      if (isStaleConnectionError(err)) {
+        cachedConn = null; connReady = false; connPromise = null
+        if (allowRetry) {
+          cachedConnBusy = false // release before the retry claims its own slot
+          return await querySnowflake(query, options, false)
+        }
+      }
+      throw new Error(`Query failed: ${err.message}`)
+    }
+  } finally {
+    cachedConnBusy = false
   }
 }
