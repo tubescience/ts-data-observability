@@ -1,4 +1,4 @@
-import { querySnowflake } from "@/lib/snowflake"
+import { querySnowflake, querySnowflakeBatch } from "@/lib/snowflake"
 import { normalizeMicroDollars } from "@/lib/units"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
@@ -69,8 +69,8 @@ export async function GET(request: NextRequest) {
       AND CONVERT_TIMEZONE('America/Los_Angeles', CHECK_TIMESTAMP)::DATE <= '${dateEnd}'
     `
 
-    const [agg, checkTypeRows, targetRows] = await Promise.all([
-      querySnowflake(`
+    const [agg, checkTypeRows, targetRows] = await querySnowflakeBatch([
+      `
         SELECT
           CONVERT_TIMEZONE('America/Los_Angeles', CHECK_TIMESTAMP)::DATE as CHECK_DATE,
           STATUS,
@@ -81,18 +81,18 @@ export async function GET(request: NextRequest) {
           ${targetClause}
         GROUP BY 1, 2
         ORDER BY 1 ASC
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT DISTINCT CHECK_TYPE FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS
         WHERE ${dateClause}
         ORDER BY 1
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT DISTINCT TARGET_TABLE FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS
         WHERE ${dateClause}
           ${checkTypeClause}
         ORDER BY 1 LIMIT 500
-      `),
+      `,
     ])
 
     return Response.json({

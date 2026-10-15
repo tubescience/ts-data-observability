@@ -161,6 +161,59 @@ function runQuery(conn: any, query: string, options: QueryOptions): Promise<Reco
   })
 }
 
+// Runs several queries sequentially on a SINGLE connection, instead of each one
+// going through querySnowflake() independently. A Snowflake connection can only
+// process one statement at a time anyway, so firing N queries via
+// Promise.all(queries.map(querySnowflake)) buys no real parallelism -- it just
+// means the first claims the shared connection and the other N-1 each pay a
+// fresh JWT handshake (~1-1.5s measured) to open their own ephemeral connection.
+// On a cold instance (dashboard's 6-way fan-out) that stacked up to ~10s for a
+// page of queries that are individually fast. Sequential-on-one-connection is
+// both cheaper and no slower than the "parallel" version ever actually was.
+export async function querySnowflakeBatch(
+  queries: string[],
+  options: QueryOptions = {}
+): Promise<Record<string, any>[][]> {
+  const useShared = !cachedConnBusy
+  if (useShared) cachedConnBusy = true
+
+  if (!useShared) {
+    const conn = await openNewConnection()
+    try {
+      const results: Record<string, any>[][] = []
+      for (const q of queries) results.push(await runQuery(conn, q, options))
+      return results
+    } catch (err: any) {
+      throw new Error(`Query failed: ${err.message}`)
+    } finally {
+      conn.destroy(() => {})
+    }
+  }
+
+  try {
+    let conn: any
+    try {
+      conn = await getOrCreateConnection()
+    } catch {
+      cachedConn = null; connReady = false; connPromise = null
+      conn = await getOrCreateConnection()
+    }
+
+    try {
+      const results: Record<string, any>[][] = []
+      for (const q of queries) results.push(await runQuery(conn, q, options))
+      return results
+    } catch (err: any) {
+      if (isStaleConnectionError(err)) {
+        cachedConn = null; connReady = false; connPromise = null
+      }
+      throw new Error(`Query failed: ${err.message}`)
+    }
+  } finally {
+    cachedConnBusy = false
+  }
+}
+
 export async function querySnowflake(
   query: string,
   options: QueryOptions = {},

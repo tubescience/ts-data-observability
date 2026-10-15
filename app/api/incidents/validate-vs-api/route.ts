@@ -1,4 +1,4 @@
-import { querySnowflake } from "@/lib/snowflake"
+import { querySnowflake, querySnowflakeBatch } from "@/lib/snowflake"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -273,19 +273,15 @@ async function runClientPerPlatformComparison(clientId: number, clientName: stri
 // has any row for this client/date, so the caller can fall back to its own
 // "nothing found" handling.
 async function runClientSpendComparison(clientId: number, date: string) {
-  const [tgtRows, mcpRows] = await Promise.all([
-    querySnowflake(
-      `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
-       FROM TS_PROD_DB.TGT_ADPIP_REPORT.V_SPEND_DAILY
-       WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
-       GROUP BY CLIENT_ID`
-    ),
-    querySnowflake(
-      `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
-       FROM TS_PROD_MCP_DB.REPORT.V_SPEND_DAILY
-       WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
-       GROUP BY CLIENT_ID`
-    ),
+  const [tgtRows, mcpRows] = await querySnowflakeBatch([
+    `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
+     FROM TS_PROD_DB.TGT_ADPIP_REPORT.V_SPEND_DAILY
+     WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
+     GROUP BY CLIENT_ID`,
+    `SELECT SUM(SPEND_USD) AS SPEND, ANY_VALUE(CLIENT_NAME) AS CLIENT_NAME
+     FROM TS_PROD_MCP_DB.REPORT.V_SPEND_DAILY
+     WHERE CLIENT_ID = ${clientId} AND DATE = '${date}'
+     GROUP BY CLIENT_ID`,
   ])
 
   if (tgtRows.length === 0 && mcpRows.length === 0) return null

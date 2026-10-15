@@ -1,24 +1,24 @@
-import { querySnowflake } from "@/lib/snowflake"
+import { querySnowflake, querySnowflakeBatch } from "@/lib/snowflake"
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
     await querySnowflake("USE ROLE MCP_MONITOR")
 
-    const [summaryRows, openRows, openAnomaliesRows, resolvedTodayRows, byCheckTypeRows, recentTrendRows] = await Promise.all([
-      querySnowflake(`
+    const [summaryRows, openRows, openAnomaliesRows, resolvedTodayRows, byCheckTypeRows, recentTrendRows] = await querySnowflakeBatch([
+      `
         SELECT STATUS, COUNT(*) as CNT
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS
         WHERE CHECK_TIMESTAMP >= CONVERT_TIMEZONE('America/Los_Angeles', CURRENT_TIMESTAMP())::DATE
         GROUP BY STATUS
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT COUNT(*) as CNT FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS WHERE STATUS = 'OPEN'
-      `),
+      `,
       // Same "open" definition as the Anomalies tab's default view: exclude anomalies whose
       // incident was already resolved, and exclude stale orphans (no incident ever opened,
       // and old enough that a self-correction is why none exists).
-      querySnowflake(`
+      `
         SELECT COUNT(*) as CNT FROM (
           SELECT r.RESULT_ID, i.STATUS AS INCIDENT_STATUS,
             (i.INCIDENT_ID IS NULL AND r.CHECK_TIMESTAMP < DATEADD('HOUR', -2, CURRENT_TIMESTAMP())) AS IS_STALE_ORPHAN
@@ -33,20 +33,20 @@ export async function GET() {
           QUALIFY ROW_NUMBER() OVER (PARTITION BY r.RESULT_ID ORDER BY i.FIRST_SEEN DESC NULLS LAST) = 1
         )
         WHERE NOT IS_STALE_ORPHAN AND COALESCE(INCIDENT_STATUS, 'OPEN') != 'RESOLVED'
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT COUNT(*) as CNT FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS
         WHERE STATUS = 'RESOLVED'
         AND CONVERT_TIMEZONE('America/Los_Angeles', RESOLVED_AT)::DATE = CONVERT_TIMEZONE('America/Los_Angeles', CURRENT_TIMESTAMP())::DATE
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT CHECK_TYPE, STATUS, COUNT(*) as CNT
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RESULTS
         WHERE CHECK_TIMESTAMP >= CONVERT_TIMEZONE('America/Los_Angeles', CURRENT_TIMESTAMP())::DATE
         GROUP BY CHECK_TYPE, STATUS
         ORDER BY CHECK_TYPE
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT
           CONVERT_TIMEZONE('America/Los_Angeles', CHECK_TIMESTAMP)::DATE as DT,
           COUNT(CASE WHEN STATUS = 'PASS' THEN 1 END) as PASSED,
@@ -56,7 +56,7 @@ export async function GET() {
           AND STATUS IN ('PASS','FAIL','ERROR')
         GROUP BY 1
         ORDER BY 1
-      `),
+      `,
     ])
 
     const summary: Record<string, number> = {}
