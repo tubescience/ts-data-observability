@@ -105,6 +105,16 @@ export function useLiveSpendCheck() {
     setLiveSpendError("")
     setLiveSpendErrorParams(null)
     setLiveSpendCheckType(target.checkType)
+
+    // The route's own maxDuration is 60s (it fans out to the external
+    // spend-validation service per platform); when that's exceeded, Vercel's
+    // platform-level timeout page ("An error occurred...") replaces the
+    // response body, which isn't JSON -- res.json() then throws a raw
+    // "Unexpected token 'A'... is not valid JSON" instead of a readable error.
+    const TIMEOUT_MS = 65_000
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
     try {
       const res = await fetch("/api/incidents/validate-vs-api", {
         method: "POST",
@@ -117,8 +127,21 @@ export function useLiveSpendCheck() {
           incidentId: target.incidentId,
           incidentIds: target.incidentIds,
         }),
+        signal: controller.signal,
       })
-      const json = await res.json()
+
+      let json: any
+      try {
+        json = await res.json()
+      } catch {
+        setLiveSpendError(
+          res.ok
+            ? "Live spend check returned an unexpected (non-JSON) response."
+            : `Live spend check failed (HTTP ${res.status}) with an unreadable response.`
+        )
+        return null
+      }
+
       if (!res.ok) {
         setLiveSpendError(json.error || `Error ${res.status}`)
         setLiveSpendErrorParams(json.requestParams || null)
@@ -127,9 +150,17 @@ export function useLiveSpendCheck() {
       setLiveSpendResult(json)
       return json
     } catch (err) {
-      setLiveSpendError(err instanceof Error ? err.message : "Live spend check failed")
+      const timedOut = err instanceof DOMException && err.name === "AbortError"
+      setLiveSpendError(
+        timedOut
+          ? "Still checking against the live platform API -- this can take a while for accounts with many campaigns. Try again shortly."
+          : err instanceof Error
+            ? err.message
+            : "Live spend check failed"
+      )
       return null
     } finally {
+      clearTimeout(timeoutId)
       setCheckingLiveSpend(false)
     }
   }

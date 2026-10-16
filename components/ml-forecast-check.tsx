@@ -39,21 +39,50 @@ export function useMlForecastCheck() {
     setCheckingMlForecast(true)
     setMlForecastResult(null)
     setMlForecastError("")
+
+    // Same failure mode as live spend validation: the route's maxDuration is
+    // 60s, and a Vercel platform-level timeout returns a non-JSON error page
+    // ("An error occurred...") that res.json() can't parse.
+    const TIMEOUT_MS = 65_000
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
     try {
       const res = await fetch("/api/incidents/validate-vs-ml", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ checkType: target.checkType, groupValue: target.groupValue }),
+        signal: controller.signal,
       })
-      const json = await res.json()
+
+      let json: any
+      try {
+        json = await res.json()
+      } catch {
+        setMlForecastError(
+          res.ok
+            ? "ML forecast check returned an unexpected (non-JSON) response."
+            : `ML forecast check failed (HTTP ${res.status}) with an unreadable response.`
+        )
+        return
+      }
+
       if (!res.ok) {
         setMlForecastError(json.error || `Error ${res.status}`)
         return
       }
       setMlForecastResult(json)
     } catch (err) {
-      setMlForecastError(err instanceof Error ? err.message : "ML forecast check failed")
+      const timedOut = err instanceof DOMException && err.name === "AbortError"
+      setMlForecastError(
+        timedOut
+          ? "Still checking against the ML forecast service -- try again shortly."
+          : err instanceof Error
+            ? err.message
+            : "ML forecast check failed"
+      )
     } finally {
+      clearTimeout(timeoutId)
       setCheckingMlForecast(false)
     }
   }
