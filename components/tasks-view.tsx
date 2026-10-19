@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { Clock, CheckCircle, XCircle } from "lucide-react"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
@@ -49,17 +50,17 @@ export function TasksView() {
 
   const { data, isLoading, error } = useQuery<TaskResult[]>({
     queryKey: ["tasks", dateStart, dateEnd],
-    queryFn: () => fetch(`/api/tasks?dateStart=${dateStart}&dateEnd=${dateEnd}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/tasks?dateStart=${dateStart}&dateEnd=${dateEnd}`),
   })
 
   const { data: scheduledData, isLoading: scheduledLoading } = useQuery<ScheduledTask[]>({
     queryKey: ["tasks-scheduled"],
-    queryFn: () => fetch("/api/tasks/scheduled").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/tasks/scheduled"),
   })
 
   const { data: statusData, isLoading: statusLoading } = useQuery<PipeTaskStatus[]>({
     queryKey: ["tasks-status", typeFilter],
-    queryFn: () => fetch(`/api/tasks/status?type=${typeFilter}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/tasks/status?type=${typeFilter}`),
   })
 
   const allResults = data || []

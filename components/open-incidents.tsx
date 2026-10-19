@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { X, Radar, Copy, Check, ArrowUp, ArrowDown, Minus, Lightbulb, CheckCircle2, AlertCircle, Radio, TrendingUp, ChevronDown, ChevronRight, Clock } from "lucide-react"
 import { useTagColors, TagBadges, TagMultiSelect } from "@/components/tag-colors"
 import { IncidentDetail } from "@/components/incident-detail"
@@ -98,7 +99,7 @@ export function OpenIncidents() {
 
   const { data, isLoading, error } = useQuery<Incident[]>({
     queryKey: ["incidents-open"],
-    queryFn: () => fetch("/api/incidents/open").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/incidents/open"),
   })
 
   const resolveMutation = useMutation({

@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
@@ -16,7 +17,7 @@ interface TrendPoint {
 export function TrendsView() {
   const { data, isLoading, error } = useQuery<TrendPoint[]>({
     queryKey: ["trends"],
-    queryFn: () => fetch("/api/trends").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/trends"),
   })
 
   if (isLoading) return <div className="text-muted-foreground">Loading trends...</div>

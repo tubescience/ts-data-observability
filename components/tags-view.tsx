@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { Plus, Trash2 } from "lucide-react"
 
 interface Tag {
@@ -26,7 +27,7 @@ export function TagsView() {
 
   const { data: tags = [], isLoading } = useQuery<Tag[]>({
     queryKey: ["tags"],
-    queryFn: () => fetch("/api/tags").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/tags"),
   })
 
   const saveMutation = useMutation({

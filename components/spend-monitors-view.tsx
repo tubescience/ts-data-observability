@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { CheckCircle, XCircle, ChevronDown, ChevronRight, Copy, Check } from "lucide-react"
 import { SpendMonitorChart } from "@/components/spend-monitor-chart"
 import { useTagColors, TagBadge, TagMultiSelect } from "@/components/tag-colors"
@@ -53,7 +54,7 @@ export function SpendMonitorsView() {
   const tagColors = useTagColors()
   const { data, isLoading, error } = useQuery<Monitor[]>({
     queryKey: ["monitors"],
-    queryFn: () => fetch("/api/monitors").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/monitors"),
   })
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set())

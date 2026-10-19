@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface SpendResult {
@@ -32,7 +33,7 @@ export function SpendView() {
 
   const { data, isLoading, error } = useQuery<SpendResult[]>({
     queryKey: ["spend"],
-    queryFn: () => fetch("/api/spend").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/spend"),
   })
 
   if (isLoading) return <div className="text-muted-foreground">Loading spend data...</div>

@@ -1,4 +1,4 @@
-import { querySnowflake } from "@/lib/snowflake"
+import { querySnowflake, querySnowflakeBatch } from "@/lib/snowflake"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -19,24 +19,24 @@ export async function GET(request: NextRequest) {
 
     try { await querySnowflake("USE ROLE MCP_MONITOR") } catch {}
 
-    // Run main query and user list in parallel
-    const mainQuery = querySnowflake(`
-      SELECT 
+    const [rows, userRowsList] = await querySnowflakeBatch([
+      `
+      SELECT
         USAGE_DATE,
         SERVICE_TYPE,
         SUM(CREDITS_USED) as CREDITS_USED
       FROM SNOWFLAKE.ACCOUNT_USAGE.METERING_DAILY_HISTORY
-      WHERE (SERVICE_TYPE ILIKE '%AI%' 
-             OR SERVICE_TYPE ILIKE '%CORTEX%' 
+      WHERE (SERVICE_TYPE ILIKE '%AI%'
+             OR SERVICE_TYPE ILIKE '%CORTEX%'
              OR SERVICE_TYPE ILIKE '%AGENT%'
              OR SERVICE_TYPE ILIKE '%CONTAINER%')
         ${dateFilter}
       GROUP BY 1, 2
       ORDER BY 1 DESC, 2
-    `)
-
-    const usersQuery = querySnowflake(`
-      SELECT DISTINCT user_name 
+    `,
+      {
+        sql: `
+      SELECT DISTINCT user_name
       FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
       WHERE start_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
         AND user_name NOT LIKE 'SYSTEM%'
@@ -44,10 +44,11 @@ export async function GET(request: NextRequest) {
              OR role_name IN ('MCP_ADMIN', 'MCP_ENGINEER', 'MCP_MONITOR'))
       ORDER BY user_name
       LIMIT 30
-    `).catch(() => [] as Record<string, any>[])
-
-    const [rows, userRows] = await Promise.all([mainQuery, usersQuery])
-    const users = (userRows as Record<string, any>[]).map((r) => r.USER_NAME).filter(Boolean)
+    `,
+        optional: true,
+      },
+    ])
+    const users = userRowsList.map((r) => r.USER_NAME).filter(Boolean)
 
     let results = rows.map((r) => ({
       usageDate: r.USAGE_DATE instanceof Date ? r.USAGE_DATE.toISOString().slice(0, 10) : String(r.USAGE_DATE).slice(0, 10),

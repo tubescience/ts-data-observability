@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { CheckCircle, XCircle, ChevronDown, ChevronRight, BarChart3, Copy, Check } from "lucide-react"
 import { MonitorHistory } from "@/components/monitor-history"
 import { useTagColors, TagBadge, TagMultiSelect } from "@/components/tag-colors"
@@ -53,7 +54,7 @@ export function MonitorsView() {
   const tagColors = useTagColors()
   const { data, isLoading, error } = useQuery<Monitor[]>({
     queryKey: ["monitors"],
-    queryFn: () => fetch("/api/monitors").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/monitors"),
   })
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set())

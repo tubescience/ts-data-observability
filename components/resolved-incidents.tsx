@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { Radar, Lightbulb } from "lucide-react"
 import { ResolvedIncidentDetail } from "@/components/resolved-incident-detail"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
@@ -48,7 +49,7 @@ export function ResolvedIncidents() {
 
   const { data, isLoading, error } = useQuery<ResolvedIncident[]>({
     queryKey: ["incidents-resolved", dateStart, dateEnd],
-    queryFn: () => fetch(`/api/incidents/resolved?dateStart=${dateStart}&dateEnd=${dateEnd}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/incidents/resolved?dateStart=${dateStart}&dateEnd=${dateEnd}`),
   })
 
   const allIncidents = data || []

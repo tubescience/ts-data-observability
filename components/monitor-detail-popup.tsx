@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { X, Radar, CheckCircle, XCircle } from "lucide-react"
 import { useTagColors, TagBadge } from "@/components/tag-colors"
 import { SeverityBadge } from "@/components/severity-badge"
@@ -47,7 +48,7 @@ export function MonitorDetailPopup({ monitorId, onClose }: { monitorId: number; 
   const tagColors = useTagColors()
   const { data, isLoading, error } = useQuery<Monitor[]>({
     queryKey: ["monitors"],
-    queryFn: () => fetch("/api/monitors").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/monitors"),
   })
 
   const monitor = (data || []).find((m) => m.monitorId === monitorId)

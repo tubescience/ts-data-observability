@@ -1,4 +1,4 @@
-import { querySnowflake } from "@/lib/snowflake"
+import { querySnowflake, querySnowflakeBatch } from "@/lib/snowflake"
 export const dynamic = "force-dynamic"
 
 function toIso(val: unknown): string | null {
@@ -49,8 +49,8 @@ function parseTaskSchedule(schedule: string | null): string | null {
 export async function GET() {
   try {
     await querySnowflake("USE ROLE MCP_MONITOR")
-    const [monitorRows, configRows, lastRunRows, procedureRows, taskRows] = await Promise.all([
-      querySnowflake(`
+    const [monitorRows, configRows, lastRunRows, procedureRows, taskRows] = await querySnowflakeBatch([
+      `
         SELECT
           MONITOR_ID, MONITOR_NAME, TARGET_DATABASE, TARGET_SCHEMA,
           TARGET_TABLE, ENABLED, OWNER, DESCRIPTION,
@@ -67,8 +67,8 @@ export async function GET() {
           END AS SOURCE_LAYER
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_MONITORS
         ORDER BY MONITOR_NAME
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT
           CONFIG_ID, MONITOR_ID, CHECK_TYPE, ENABLED, SEVERITY,
           THRESHOLD_PCT, THRESHOLD_VALUE, DATE_COLUMN, KEY_COLUMNS,
@@ -95,25 +95,31 @@ export async function GET() {
           END AS DOMAIN
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_CONFIG
         ORDER BY MONITOR_ID, CHECK_TYPE
-      `),
-      querySnowflake(`
+      `,
+      {
+        sql: `
         SELECT MONITOR_ID,
           CONVERT_TIMEZONE('America/Los_Angeles', MAX(RUN_START)) AS LAST_RUN
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RUN_LOG
         WHERE STATUS = 'SUCCESS'
         GROUP BY MONITOR_ID
-      `).catch(() => [] as Record<string, any>[]),
+      `,
+        optional: true,
+      },
       // Monitors without their own SCHEDULE_CRON/TASK_NAME still run — usually
       // via a shared batch procedure (e.g. RUN_PATTERN_BATCH) rather than a
       // per-monitor task. Picking the most-run procedure per monitor surfaces
       // that "runs via a parent job" fact instead of showing a bare "—".
-      querySnowflake(`
+      {
+        sql: `
         SELECT MONITOR_ID, PROCEDURE_NAME, COUNT(*) AS RUN_COUNT
         FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_RUN_LOG
         WHERE STATUS = 'SUCCESS'
         GROUP BY MONITOR_ID, PROCEDURE_NAME
-      `).catch(() => [] as Record<string, any>[]),
-      querySnowflake(`SHOW TASKS IN SCHEMA TS_INGEST_DB.OBSERVABILITY`).catch(() => [] as Record<string, any>[]),
+      `,
+        optional: true,
+      },
+      { sql: `SHOW TASKS IN SCHEMA TS_INGEST_DB.OBSERVABILITY`, optional: true },
     ])
 
     const checksByMonitor: Record<number, any[]> = {}

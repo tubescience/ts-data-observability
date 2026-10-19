@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { AlertCircle, X, Radar, ArrowUp, ArrowDown, Minus } from "lucide-react"
 import { MonitorDetailPopup } from "@/components/monitor-detail-popup"
 import { SeverityBadge } from "@/components/severity-badge"
@@ -143,7 +144,7 @@ export function AnomaliesView() {
 
   const { data, isLoading, error } = useQuery<Anomaly[]>({
     queryKey: ["anomalies", dateStart, dateEnd],
-    queryFn: () => fetch(`/api/anomalies?dateStart=${dateStart}&dateEnd=${dateEnd}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/anomalies?dateStart=${dateStart}&dateEnd=${dateEnd}`),
   })
 
   const allAnomalies = data || []

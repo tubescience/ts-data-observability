@@ -13,11 +13,21 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "checkType and groupValue are required" }, { status: 400 })
     }
 
-    const res = await fetch(`${ML_FORECAST_BASE_URL}/api/ml_forecast/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ check_type: checkType, group_value: String(groupValue) }),
-    })
+    // Without a timeout, a hung ML service blocks this serverless function for the
+    // full maxDuration (60s), burning compute for nothing -- cap it well under that.
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 55_000)
+    let res: Response
+    try {
+      res = await fetch(`${ML_FORECAST_BASE_URL}/api/ml_forecast/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ check_type: checkType, group_value: String(groupValue) }),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
     const json = await res.json()
 
     if (!res.ok) {

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 
 interface Check {
@@ -26,7 +27,7 @@ export function SystemChecks() {
 
   const { data, isLoading, error } = useQuery<Check[]>({
     queryKey: ["checks"],
-    queryFn: () => fetch("/api/checks").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/checks"),
   })
 
   if (isLoading) return <div className="text-muted-foreground">Loading system checks...</div>

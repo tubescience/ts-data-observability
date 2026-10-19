@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { X, AlertTriangle, TrendingUp, GitBranch, Copy, Check, Radar, Lightbulb, Radio, Clock } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts"
 import { LineagePanel } from "./lineage-view"
@@ -75,7 +76,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
   // Resolve group name for SPEND_CLIENT / SPEND_ACCOUNT / SRC_SPEND_CLIENT / SRC_SPEND_ACCOUNT / SUM_VALUE_GROUPED / DATA_RECENCY
   const { data: groupNameData } = useQuery<{ name: string | null }>({
     queryKey: ["group-name", incident.checkType, incident.groupValue],
-    queryFn: () => fetch(`/api/incidents/group-name?checkType=${incident.checkType}&groupValue=${incident.groupValue || ""}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/incidents/group-name?checkType=${incident.checkType}&groupValue=${incident.groupValue || ""}`),
     enabled:
       (incident.checkType === "SPEND_CLIENT" ||
         incident.checkType === "SPEND_ACCOUNT" ||
@@ -97,7 +98,7 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
 
   const { data, isLoading, error } = useQuery<HistoryPoint[]>({
     queryKey: ["incident-history", incident.incidentId, dateStart, dateEnd],
-    queryFn: () => fetch(`/api/incidents/history?${params}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/incidents/history?${params}`),
   })
 
   const results = data || []

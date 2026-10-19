@@ -1,4 +1,4 @@
-import { querySnowflake } from "@/lib/snowflake"
+import { querySnowflake, querySnowflakeBatch } from "@/lib/snowflake"
 import { NextRequest } from "next/server"
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -50,26 +50,33 @@ export async function GET(request: NextRequest) {
 
       if (maxDepth === 1) {
         // Fast path: single-level lookup (no recursion)
-        ;[upRows, downRows] = await Promise.all([
-          querySnowflake(`
+        ;[upRows, downRows] = await querySnowflakeBatch([
+          {
+            sql: `
             SELECT related_database || '.' || related_schema || '.' || related_name AS fqn,
                    related_database AS database, related_schema AS schema, related_name AS name,
                    related_type AS type, 1 AS level, '${fqn}' AS parent_fqn
             FROM TS_INGEST_DB.OBSERVABILITY.LINEAGE_CACHE
             WHERE object_fqn = '${fqn}' AND direction = 'UPSTREAM'
-          `).catch(() => [] as Record<string, any>[]),
-          querySnowflake(`
+          `,
+            optional: true,
+          },
+          {
+            sql: `
             SELECT related_database || '.' || related_schema || '.' || related_name AS fqn,
                    related_database AS database, related_schema AS schema, related_name AS name,
                    related_type AS type, 1 AS level, '${fqn}' AS parent_fqn
             FROM TS_INGEST_DB.OBSERVABILITY.LINEAGE_CACHE
             WHERE object_fqn = '${fqn}' AND direction = 'DOWNSTREAM'
-          `).catch(() => [] as Record<string, any>[]),
+          `,
+            optional: true,
+          },
         ])
       } else {
         // Multi-level: recursive CTE chain-lookup
-        ;[upRows, downRows] = await Promise.all([
-          querySnowflake(`
+        ;[upRows, downRows] = await querySnowflakeBatch([
+          {
+            sql: `
             WITH RECURSIVE chain AS (
               SELECT related_database || '.' || related_schema || '.' || related_name AS fqn,
                      related_database AS db, related_schema AS sch, related_name AS name,
@@ -88,8 +95,11 @@ export async function GET(request: NextRequest) {
             )
             SELECT DISTINCT fqn, db AS database, sch AS schema, name, type, level, parent_fqn
             FROM chain ORDER BY level, fqn
-          `).catch(() => [] as Record<string, any>[]),
-          querySnowflake(`
+          `,
+            optional: true,
+          },
+          {
+            sql: `
             WITH RECURSIVE chain AS (
               SELECT related_database || '.' || related_schema || '.' || related_name AS fqn,
                      related_database AS db, related_schema AS sch, related_name AS name,
@@ -108,7 +118,9 @@ export async function GET(request: NextRequest) {
             )
             SELECT DISTINCT fqn, db AS database, sch AS schema, name, type, level, parent_fqn
             FROM chain ORDER BY level, fqn
-          `).catch(() => [] as Record<string, any>[]),
+          `,
+            optional: true,
+          },
         ])
       }
 
@@ -135,21 +147,21 @@ export async function GET(request: NextRequest) {
     const dbFilter = dbName ? `AND REFERENCING_DATABASE = '${dbName}'` : ""
     const dbFilterRef = dbName ? `AND REFERENCED_DATABASE = '${dbName}'` : ""
 
-    const [upstream, downstream] = await Promise.all([
-      querySnowflake(`
+    const [upstream, downstream] = await querySnowflakeBatch([
+      `
         SELECT DISTINCT
           REFERENCED_DATABASE AS database, REFERENCED_SCHEMA AS schema,
           REFERENCED_OBJECT_NAME AS name, REFERENCED_OBJECT_DOMAIN AS type, 1 AS level
         FROM SNOWFLAKE.ACCOUNT_USAGE.OBJECT_DEPENDENCIES
         WHERE REFERENCING_OBJECT_NAME = '${objName}' AND REFERENCING_SCHEMA = '${schemaName}' ${dbFilter}
-      `),
-      querySnowflake(`
+      `,
+      `
         SELECT DISTINCT
           REFERENCING_DATABASE AS database, REFERENCING_SCHEMA AS schema,
           REFERENCING_OBJECT_NAME AS name, REFERENCING_OBJECT_DOMAIN AS type, 1 AS level
         FROM SNOWFLAKE.ACCOUNT_USAGE.OBJECT_DEPENDENCIES
         WHERE REFERENCED_OBJECT_NAME = '${objName}' AND REFERENCED_SCHEMA = '${schemaName}' ${dbFilterRef}
-      `),
+      `,
     ])
 
     const targetFqn = fqn || `${schemaName}.${objName}`

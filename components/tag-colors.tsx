@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { ChevronDown } from "lucide-react"
 
 interface TagMeta {
@@ -12,7 +13,7 @@ interface TagMeta {
 export function useTagColors() {
   const { data } = useQuery<TagMeta[]>({
     queryKey: ["tags"],
-    queryFn: () => fetch("/api/tags").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/tags"),
     staleTime: 60000,
   })
 

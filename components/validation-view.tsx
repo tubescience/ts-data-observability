@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { Search } from "lucide-react"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
@@ -139,7 +140,7 @@ export function ValidationView() {
 
   const { data: entitiesData } = useQuery<EntitiesResponse>({
     queryKey: ["validation-entities"],
-    queryFn: () => fetch("/api/validation/entities").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/validation/entities"),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -159,7 +160,7 @@ export function ValidationView() {
 
   const { data, isLoading, error } = useQuery<ResultsResponse>({
     queryKey: ["validation-results", mode, selectedEntity?.id, checkTypeFilter, targetFilter, dateStart, dateEnd],
-    queryFn: () => fetch(`/api/validation/results?${params}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/validation/results?${params}`),
     enabled: mode === "general" || !!selectedEntity,
   })
 

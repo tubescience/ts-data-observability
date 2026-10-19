@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { fetchJson } from "@/lib/fetch-json"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from "recharts"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
@@ -49,7 +50,7 @@ export function CreditsView() {
 
   const { data, isLoading, error } = useQuery<CreditResult[]>({
     queryKey: ["credits"],
-    queryFn: () => fetch("/api/credits").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/credits"),
   })
 
   const { data: aiResponse, isLoading: aiLoading, error: aiError } = useQuery<{ data: AICostEntry[]; users: string[] }>({
@@ -57,7 +58,7 @@ export function CreditsView() {
     queryFn: () => {
       const params = new URLSearchParams({ startDate: aiStartDate, endDate: aiEndDate })
       if (aiUserFilter) params.set("user", aiUserFilter)
-      return fetch(`/api/credits/ai-costs?${params}`).then((r) => r.json())
+      return fetchJson(`/api/credits/ai-costs?${params}`)
     },
   })
 

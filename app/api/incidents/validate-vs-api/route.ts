@@ -6,6 +6,21 @@ export const maxDuration = 60
 const SPEND_VALIDATION_BASE_URL = "https://spendvalidation.vercel.app"
 const AUTO_RESOLVE_TOLERANCE_PCT = 2
 
+// Without a timeout, a hung spend-validation service blocks this serverless function
+// (maxDuration=60) for the full duration -- in the per-platform Promise.all fan-outs,
+// one slow platform blocks the whole group. Each call site already has its own
+// try/catch for graceful per-platform degradation, so this just adds the signal.
+function fetchSpendValidation(body: Record<string, unknown>): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 45_000)
+  return fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeoutId))
+}
+
 // This route calls spendvalidation.vercel.app directly from TypeScript -- entirely
 // separate from CHECK_LIVE_SPEND's own Snowflake-side calls to the same API, and
 // previously logged nowhere at all, making "how many API calls per day, by
@@ -247,11 +262,7 @@ async function runClientPerPlatformComparison(clientId: number, clientName: stri
   const results = await Promise.all(
     platforms.map(async (platform) => {
       try {
-        const res = await fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ platform, start_date: date, end_date: date, client: clientName }),
-        })
+        const res = await fetchSpendValidation({ platform, start_date: date, end_date: date, client: clientName })
         const json = await res.json()
         await logApiCall("APP_CLIENT_PER_PLATFORM", platform, incidentId, "client", String(clientId), true)
         return { platform, ...json }
@@ -424,11 +435,7 @@ export async function POST(request: NextRequest) {
           date,
         }
         try {
-          const res = await fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ platform: directPlatform, start_date: date, end_date: date, client: clientName }),
-          })
+          const res = await fetchSpendValidation({ platform: directPlatform, start_date: date, end_date: date, client: clientName })
           const json = await res.json()
           await logApiCall("APP_CLIENT_DIRECT_PLATFORM", directPlatform, resolveIds[0] ?? null, "client", String(clientId), true)
           return finalize({ date, results: [{ platform: directPlatform, ...json }] }, requestParams)
@@ -571,11 +578,7 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          const res = await fetch(`${SPEND_VALIDATION_BASE_URL}/api/spend_validation/run`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
+          const res = await fetchSpendValidation(payload)
           const json = await res.json()
           await logApiCall("APP_ACCOUNT_PLATFORM", platform, resolveIds[0] ?? null, isPlatformLevel ? "platform" : "account", String(groupValue), true)
           return { platform, ...json }

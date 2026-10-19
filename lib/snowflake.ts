@@ -170,8 +170,31 @@ function runQuery(conn: any, query: string, options: QueryOptions): Promise<Reco
 // On a cold instance (dashboard's 6-way fan-out) that stacked up to ~10s for a
 // page of queries that are individually fast. Sequential-on-one-connection is
 // both cheaper and no slower than the "parallel" version ever actually was.
+// A plain string is a required query (any failure aborts the whole batch, same
+// as before). `{ sql, optional: true }` is for queries that are fine to come
+// back empty -- a single bad one logs and resolves to `[]` instead of taking
+// down every other query batched alongside it (e.g. monitors/route.ts's
+// `SHOW TASKS` and a couple of best-effort lookups it already wrapped in
+// their own `.catch(() => [])` before being moved into one shared connection).
+type BatchQuery = string | { sql: string; optional?: boolean }
+
+async function runBatchQuery(
+  conn: any,
+  q: BatchQuery,
+  options: QueryOptions
+): Promise<Record<string, any>[]> {
+  if (typeof q === "string") return runQuery(conn, q, options)
+  try {
+    return await runQuery(conn, q.sql, options)
+  } catch (err) {
+    if (!q.optional) throw err
+    console.error(new Date().toISOString(), "[querySnowflakeBatch] optional query failed", err)
+    return []
+  }
+}
+
 export async function querySnowflakeBatch(
-  queries: string[],
+  queries: BatchQuery[],
   options: QueryOptions = {}
 ): Promise<Record<string, any>[][]> {
   const useShared = !cachedConnBusy
@@ -181,7 +204,7 @@ export async function querySnowflakeBatch(
     const conn = await openNewConnection()
     try {
       const results: Record<string, any>[][] = []
-      for (const q of queries) results.push(await runQuery(conn, q, options))
+      for (const q of queries) results.push(await runBatchQuery(conn, q, options))
       return results
     } catch (err: any) {
       throw new Error(`Query failed: ${err.message}`)
@@ -201,7 +224,7 @@ export async function querySnowflakeBatch(
 
     try {
       const results: Record<string, any>[][] = []
-      for (const q of queries) results.push(await runQuery(conn, q, options))
+      for (const q of queries) results.push(await runBatchQuery(conn, q, options))
       return results
     } catch (err: any) {
       if (isStaleConnectionError(err)) {

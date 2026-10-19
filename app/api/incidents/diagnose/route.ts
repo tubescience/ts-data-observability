@@ -36,13 +36,29 @@ export async function POST(request: NextRequest) {
           details: stale != null ? `Table is ${stale} minutes stale (threshold: ${lastThreshold} min)` : "Could not determine freshness"
         }
       } else if (checkType === "ROW_COUNT") {
-        const rows = await querySnowflake(`SELECT COUNT(*) AS cnt FROM ${table}`)
-        const cnt = rows[0]?.CNT
-        validation = {
-          stillFailing: cnt != null && lastThreshold != null && cnt < lastThreshold,
-          currentMetric: cnt,
-          threshold: lastThreshold,
-          details: `Current row count: ${cnt?.toLocaleString()} (threshold: ${lastThreshold?.toLocaleString()})`
+        // A bare COUNT(*) on a VIEW can be a full-table scan -- either because it's one
+        // of the RLS-protected MCP secure views (forces a per-row security predicate,
+        // confirmed elsewhere to take minutes) or a large reporting view like
+        // V_SPEND_DAILY (340M+ rows). targetTable here is whatever the original
+        // incident's check used, which can be either a view or a real base table, so
+        // skip the live re-check for views rather than risk the same cost here.
+        const bareName = table.split(".").pop() || table
+        if (bareName.startsWith("V_")) {
+          validation = {
+            stillFailing: lastMetric != null && lastThreshold != null && lastMetric < lastThreshold,
+            currentMetric: lastMetric,
+            threshold: lastThreshold,
+            details: `Live re-check skipped for view ${bareName} (can force a full scan) -- showing last known metric: ${lastMetric?.toLocaleString?.() ?? lastMetric} (threshold: ${lastThreshold?.toLocaleString?.() ?? lastThreshold})`
+          }
+        } else {
+          const rows = await querySnowflake(`SELECT COUNT(*) AS cnt FROM ${table}`)
+          const cnt = rows[0]?.CNT
+          validation = {
+            stillFailing: cnt != null && lastThreshold != null && cnt < lastThreshold,
+            currentMetric: cnt,
+            threshold: lastThreshold,
+            details: `Current row count: ${cnt?.toLocaleString()} (threshold: ${lastThreshold?.toLocaleString()})`
+          }
         }
       } else {
         validation = {
