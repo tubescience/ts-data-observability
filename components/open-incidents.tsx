@@ -14,6 +14,7 @@ import { useValidateIncidentCheck, ValidateIncidentToasts } from "@/components/v
 import { ResolvedIncidents } from "@/components/resolved-incidents"
 import { AnomaliesView } from "@/components/anomalies-view"
 import { SeverityBadge } from "@/components/severity-badge"
+import { GroupStatusBadge } from "@/components/group-status-badge"
 import { ResponsiveTable, TableColumn } from "@/components/ui/responsive-table"
 import { formatTick } from "@/components/chart-utils"
 
@@ -24,6 +25,7 @@ interface Incident {
   targetTable: string
   groupValue: string | null
   groupName: string | null
+  groupStatus: string | null
   monitorId: number | null
   tags: string[]
   severity: string
@@ -62,6 +64,7 @@ function worstSeverity(incidents: Incident[]): string {
     incidents[0]?.severity || "MEDIUM"
   )
 }
+
 
 export function OpenIncidents() {
   const tagColors = useTagColors()
@@ -448,6 +451,7 @@ export function OpenIncidents() {
                     <span className="text-muted-foreground font-normal">No Group</span>
                   )}
                 </span>
+                <GroupStatusBadge status={group.incidents[0]?.groupStatus ?? null} />
                 {(() => {
                   const groupTags = [...new Set(group.incidents.flatMap((i) => i.tags))]
                   return groupTags.length > 0 ? (

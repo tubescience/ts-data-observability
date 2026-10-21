@@ -35,6 +35,19 @@ export async function GET() {
         SELECT c.id, c.name, ct.check_type FROM client_names c CROSS JOIN client_check_types ct
         UNION ALL
         SELECT a.id, a.name, ct.check_type FROM account_names a CROSS JOIN account_check_types ct
+      ), client_statuses AS (
+        -- NAME_LOOKUP_CACHE doesn't carry STATUS, so this reads the small dimension
+        -- tables directly (~230/~760 rows) rather than V_SPEND_DAILY -- same reasoning
+        -- as the name lookups above.
+        SELECT CLIENT_ID::VARCHAR AS id, STATUS AS status
+        FROM TS_PROD_DB.INGEST.SRC_TS_CLIENT_LIST WHERE CLIENT_ID IS NOT NULL
+      ), account_statuses AS (
+        SELECT ACCOUNT_ID::VARCHAR AS id, STATUS AS status
+        FROM TS_PROD_DB.INGEST.SRC_TS_ACCOUNT_LIST WHERE ACCOUNT_ID IS NOT NULL
+      ), statuses AS (
+        SELECT c.id, c.status, ct.check_type FROM client_statuses c CROSS JOIN client_check_types ct
+        UNION ALL
+        SELECT a.id, a.status, ct.check_type FROM account_statuses a CROSS JOIN account_check_types ct
       ), cfg_dedup AS (
         -- OBSERVABILITY_CONFIG isn't guaranteed unique per (MONITOR_ID, CHECK_TYPE) --
         -- some have multiple CONFIG_ID rows (legacy duplicates). Joining on the raw
@@ -52,6 +65,7 @@ export async function GET() {
         CONVERT_TIMEZONE('America/Los_Angeles', i.LAST_SEEN) as LAST_SEEN_PST,
         CONVERT_TIMEZONE('America/Los_Angeles', i.CREATED_AT) as CREATED_AT_PST,
         n.name AS GROUP_NAME,
+        s.status AS GROUP_STATUS,
         i.TAGS AS INCIDENT_TAGS,
         m.TAGS AS MONITOR_TAGS,
         -- The real pass/fail band varies by check: some (ROW_COUNT/VOLUME baseline
@@ -67,6 +81,7 @@ export async function GET() {
         COALESCE(i.LAST_DETAILS:threshold_pct::FLOAT, cfg.THRESHOLD_PCT) AS EFFECTIVE_THRESHOLD_PCT
       FROM TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_INCIDENTS i
       LEFT JOIN names n ON n.id = i.GROUP_VALUE::VARCHAR AND n.check_type = i.CHECK_TYPE
+      LEFT JOIN statuses s ON s.id = i.GROUP_VALUE::VARCHAR AND s.check_type = i.CHECK_TYPE
       LEFT JOIN TS_INGEST_DB.OBSERVABILITY.OBSERVABILITY_MONITORS m ON m.MONITOR_ID = i.MONITOR_ID
       LEFT JOIN cfg_dedup cfg ON cfg.MONITOR_ID = i.MONITOR_ID AND cfg.CHECK_TYPE = i.CHECK_TYPE
       WHERE i.STATUS = 'OPEN'
@@ -92,6 +107,7 @@ export async function GET() {
         targetTable: r.TARGET_TABLE,
         groupValue: r.GROUP_VALUE,
         groupName: r.GROUP_NAME || null,
+        groupStatus: r.GROUP_STATUS || null,
         monitorId: r.MONITOR_ID ?? null,
         severity: r.SEVERITY,
         status: r.STATUS,

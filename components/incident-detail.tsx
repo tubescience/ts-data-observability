@@ -11,6 +11,7 @@ import { SuggestedResolutionPopup, buildSuggestionMessage } from "@/components/s
 import { LIVE_SPEND_CHECK_TYPES, useLiveSpendCheck, LiveSpendPopup } from "@/components/live-spend-check"
 import { ML_FORECAST_CHECK_TYPES, useMlForecastCheck, MlForecastPopup } from "@/components/ml-forecast-check"
 import { SeverityBadge } from "@/components/severity-badge"
+import { GroupStatusBadge } from "@/components/group-status-badge"
 import { getYAxisWidth, formatTick, ChartTooltip } from "@/components/chart-utils"
 
 interface HistoryPoint {
@@ -32,6 +33,7 @@ interface Incident {
   targetTable: string
   groupValue: string | null
   groupName: string | null
+  groupStatus: string | null
   monitorId: number | null
   tags: string[]
   severity: string
@@ -165,6 +167,9 @@ export function IncidentDetail({ incident, onClose, onResolve }: IncidentDetailP
             <span className="text-muted-foreground text-xs">Group</span>
             <p className="text-xs mt-0.5">{incident.groupValue || "—"}</p>
             {groupName && <p className="text-xs font-medium text-foreground">{groupName}</p>}
+            {incident.groupStatus && (
+              <p className="mt-1"><GroupStatusBadge status={incident.groupStatus} /></p>
+            )}
           </div>
           <div>
             <span className="text-muted-foreground text-xs">Severity</span>
